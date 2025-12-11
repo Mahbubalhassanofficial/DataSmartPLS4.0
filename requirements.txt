@@ -1,8 +1,26 @@
-streamlit
-pandas
-numpy
-scipy
-openpyxl
-pyreadstat
-pyreadr
-reportlab
+streamlit>=1.32.0
+pandas>=2.1.0
+numpy>=1.26.0
+scipy>=1.11.0
+
+# Excel support
+openpyxl>=3.1.2
+
+# Export formats
+pyreadstat>=1.3.8
+pyreadr>=0.4.7
+
+# PDF export
+reportlab>=3.6.12
+
+# Statistical / psychometrics helpers
+statsmodels>=0.14.1
+
+# Optional (needed for qcut stability)
+pytz>=2024.1
+
+# For JSON and safer YAML (in case later needed)
+PyYAML>=6.0
+
+# Ensure compatibility with Streamlit Cloud
+protobuf>=4.25.0

@@ -1,147 +1,146 @@
 # DataSmartPLS4.0
-High-quality synthetic survey data generator for SmartPLS-4, PLS-SEM, CB-SEM, fsQCA, IMPA, and advanced behavioral modeling.  
-Designed for researchers, students, and analysts who require **realistic, psychometrically valid synthetic datasets** for methodological testing, simulation studies, training, or tool development.
+
+**DataSmartPLS4.0** is an advanced synthetic survey data generator designed for **SmartPLS**, **PLS-SEM**, **CB-SEM**, **fsQCA**, **IMPA**, and broader behavioral modeling applications.  
+It produces **realistic, psychometrically valid, multi-construct datasets** based on latent variable models, configurable measurement structures, response biases, structural relations, and multi-group analyses.
+
+This tool is developed as part of the **B’Deshi Emerging Research Lab** ecosystem.
 
 ---
 
-## ✨ Overview
+## 🚀 Vision of the Tool
 
-**DataSmartPLS4.0** is a next-generation synthetic data engine capable of generating:
-- Realistic reflective measurement models  
-- High-quality Likert-scale item responses  
-- Latent variable structures with controllable distributions  
-- True factor loadings, noise components, and item properties  
-- Demographic variables  
-- Structural model relationships (future release)  
-- Response behaviors and biases (future release)  
-- Multi-group structures for MGA / MICOM (future release)  
+This repository will evolve into a **fully professional, multi-module synthetic data generation suite** that supports:
 
-The tool can be used for:
-- SmartPLS pipeline testing  
-- Teaching PLS-SEM/CB-SEM  
-- fsQCA calibration training  
-- Monte-Carlo-style methodology studies  
-- Survey instrument prototyping  
-- Generating training datasets for algorithm development  
+### ✔ Reflective measurement model simulation  
+### ✔ Advanced latent distributions  
+- normal  
+- skewed  
+- kurtotic  
+- uniform  
+- lognormal  
+- beta  
+- mixture distributions  
 
----
+### ✔ Structural model simulation  
+- PLS-SEM & CB-SEM  
+- mediation  
+- moderation  
+- higher-order constructs  
+- path coefficient control  
+- R²-driven latent scores  
 
-## 🚀 Features (v0.1)
+### ✔ Response behaviour simulation  
+- careless responses  
+- straight-lining  
+- acquiescence bias  
+- midpoint bias  
+- extremity bias  
+- social desirability effects  
+- missing data (MCAR, MAR, MNAR)  
+- outlier generation  
 
-### ✔ Reflective Construct Generator  
-- Latent variable simulation  
-- Item generation via factor-loading model  
-- Controlled error variance  
-- Likert-scale discretization  
-- Configurable number of items  
-- Adjustable loading patterns  
+### ✔ Demographics & multi-group modeling  
+- configurable demographic distributions  
+- group-specific means, variances, and structural effects  
+- simulation for MGA / MICOM  
 
-### ✔ Base Distributions  
-- Normal  
-- Skewed  
-- Uniform  
-- Lognormal  
-- Beta (bounded latent traits)  
+### ✔ Diagnostics dashboard  
+- Cronbach’s alpha  
+- Composite reliability  
+- AVE  
+- HTMT  
+- VIF  
+- item correlation matrix  
+- R², Q², f²  
+- visualizations (heatmaps, distributions, boxplots)  
 
-### ✔ Synthetic Demographics  
-- Gender  
-- Age group  
-- Income  
-- Study level  
-(More demographic controls coming soon.)
-
-### ✔ Deterministic + Random Control  
-- Random seed for reproducibility  
-- Fully configurable parameter set  
-
----
-
-## 🧱 Roadmap
-
-### 🔹 v0.1 (Current)
-- Core latent → indicator engine  
-- Single/multiple reflective constructs  
-- Likert-scale mapping  
-- Basic demographics  
-- Minimal Streamlit UI  
-
-### 🔹 v0.2 (Next)
-- Advanced distributions  
-- Reverse coding  
-- Cross-loadings  
-- Response-style biases  
-- Careless answering / straight-lining  
-- Extreme and midpoint bias  
-- Missing data simulation  
-
-### 🔹 v0.3
-- Structural Model Engine (PLS & CB-SEM)  
-- Mediation, moderation, first-order and second-order constructs  
-- Latent correlations  
-- R² target control  
-- Multi-group simulation  
-
-### 🔹 v0.4
-- Full diagnostics dashboard  
-- Reliability and validity indices  
-- HTMT, AVE, CR, VIF, KMO  
-- Correlation heatmaps  
-- Distribution plots  
-
-### 🔹 v0.5
-- Export options  
-- CSV, Excel, SPSS, Stata, RDS  
+### ✔ Export formats  
+- CSV  
+- Excel  
+- SPSS (.sav)  
+- Stata (.dta)  
+- R (.rds)  
 - Auto-generated codebook  
-- Auto-generated SmartPLS-ready dataset package  
+- SmartPLS-ready dataset bundle  
 
-### 🔹 v1.0
-- Full professional tool  
-- Multi-page Streamlit interface  
-- Branding for **B’Deshi Emerging Research Lab**  
-- Publishable as a methodology tool  
+### ✔ Streamlit multi-page interface  
+- Modular UI  
+- Step-by-step configuration  
+- Real-time diagnostics  
+- Download center  
+- Custom branding  
 
 ---
 
-## 📁 Repository Structure (planned)
+## 🧱 Repository Roadmap (V1 → V5 Combined)
 
+The development plan integrates **all levels** of complexity within the same build:
+
+### **Phase 1 — Core Measurement Engine**
+- Latent variable generation  
+- Item-level reflective indicators  
+- Likert mapping  
+- Loading structures  
+- Multi-construct generator  
+
+### **Phase 2 — Advanced Realism**
+- bias simulation  
+- missingness  
+- outliers  
+- noise models  
+
+### **Phase 3 — Structural Model Engine**
+- PLS paths  
+- mediation / moderation  
+- second-order constructs  
+- group-specific models  
+
+### **Phase 4 — Diagnostics**
+- reliability  
+- validity  
+- structural diagnostics  
+- graphs & visualizations  
+
+### **Phase 5 — UI + Export System**
+- Streamlit multi-page interface  
+- Data export center  
+- Codebook generator  
+- Branding & aesthetics  
+
+---
+
+## 📁 Planned Repository Structure
 DataSmartPLS4.0/
 │
-├─ app/
-│ ├─ streamlit_app.py
-│ └─ pages/
+├─ app/ # Streamlit app (multi-page UI)
+│ ├─ Home.py
+│ ├─ MeasurementModel.py
+│ ├─ StructuralModel.py
+│ ├─ ResponseBias.py
+│ ├─ Demographics.py
+│ ├─ Diagnostics.py
+│ └─ ExportCenter.py
 │
-├─ core/
+├─ core/ # Core simulation logic (Python)
 │ ├─ config.py
+│ ├─ latent.py
 │ ├─ measurement.py
-│ ├─ distributions.py
-│ ├─ demographics.py
 │ ├─ bias.py
 │ ├─ structural.py
+│ ├─ demographics.py
+│ ├─ diagnostics.py
 │ └─ generator.py
 │
-├─ examples/
-│ ├─ notebooks/
-│ └─ datasets/
+├─ utils/ # Helpers, plotting, exporting
+│ ├─ plotting.py
+│ ├─ export.py
+│ └─ helpers.py
 │
-├─ tests/
+├─ examples/ # Example notebooks & datasets
+│
+├─ tests/ # Automated tests (optional)
 │
 ├─ README.md
 ├─ LICENSE
+├─ .gitignore
 └─ requirements.txt
-
-Author
-Mahbub Hassan
-Founder — B’Deshi Emerging Research Lab
-Transportation Systems, Data Analytics, and Intelligent Mobility Researcher
-
-🤝 Contributing
-
-Contributions will be welcomed after v0.2.
-A contributing guide will be added shortly.
-
-⭐ Citation (to include in your papers)
-
-Hassan, M. (2025). DataSmartPLS4.0: A Synthetic Survey Data Generator for SmartPLS and Behavioral Research.
-B’Deshi Emerging Research Lab. GitHub Repository.
-https://github.com/
-<your-username>/DataSmartPLS4.0

@@ -1,5 +1,8 @@
-streamlit==1.40.1
-pandas==2.2.2
-numpy==1.26.4
-scipy==1.12.0
-plotly==5.22.0
+streamlit
+pandas
+numpy
+scipy
+openpyxl
+pyreadstat
+pyreadr
+reportlab

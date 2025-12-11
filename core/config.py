@@ -2,15 +2,7 @@
 core/config.py
 --------------
 Central configuration dataclasses for DataSmartPLS 4.0.
-
-This module defines all model-level objects used by:
-- structural latent generator
-- measurement/item generator
-- bias engine
-- demographic generator
-- export/diagnostics modules
-
-Designed for high extensibility and strict type validation.
+Enhanced version with deeper validation and safeguards.
 """
 
 from __future__ import annotations
@@ -22,7 +14,6 @@ from typing import List, Optional, Literal, Dict
 # BASIC TYPE DEFINITIONS
 # ============================================================
 
-# Supported latent distribution families
 DistributionType = Literal[
     "normal",
     "skewed",
@@ -31,9 +22,7 @@ DistributionType = Literal[
     "beta",
 ]
 
-LikertScaleType = Literal[
-    "discrete_likert"
-]
+LikertScaleType = Literal["discrete_likert"]
 
 
 # ============================================================
@@ -53,30 +42,74 @@ class PathConfig:
     def __post_init__(self):
         self.source = str(self.source).strip()
         self.target = str(self.target).strip()
-        if self.source == "" or self.target == "":
-            raise ValueError("Structural path cannot have empty source/target.")
+
+        if not self.source or not self.target:
+            raise ValueError("Structural path cannot have empty source or target.")
+
         if self.source == self.target:
-            raise ValueError(f"Invalid path: {self.source} → {self.target} (same construct).")
+            raise ValueError(f"Invalid path: {self.source} → {self.target} (self-loop).")
+
+        if not isinstance(self.beta, (int, float)):
+            raise ValueError("Beta coefficient must be numeric.")
 
 
 @dataclass
 class StructuralConfig:
-    """
-    Container for structural model:
-        - list of PathConfig objects
-        - optional R² targets for endogenous constructs
-    """
+    """Container for structural model settings."""
     paths: List[PathConfig] = field(default_factory=list)
     r2_targets: Dict[str, float] = field(default_factory=dict)
 
-    def validate(self):
-        # Check for duplicate paths
+    # ------------------------
+    def validate(self, construct_names: List[str]):
+        """Validate structural model integrity."""
         seen = set()
+
+        # Duplicate path prevention
         for p in self.paths:
             key = (p.source, p.target)
             if key in seen:
-                raise ValueError(f"Duplicate structural path detected: {p.source} → {p.target}")
+                raise ValueError(f"Duplicate path: {p.source} → {p.target}")
             seen.add(key)
+
+            # Construct existence check
+            if p.source not in construct_names:
+                raise ValueError(f"Structural path source '{p.source}' not defined as a construct.")
+            if p.target not in construct_names:
+                raise ValueError(f"Structural path target '{p.target}' not defined as a construct.")
+
+        # R² validation
+        for cons, val in self.r2_targets.items():
+            if cons not in construct_names:
+                raise ValueError(f"R² target set for unknown construct '{cons}'.")
+            if not (0 <= val < 1):
+                raise ValueError(f"R² for {cons} must be between 0 and 1.")
+
+        # Detect circular loops
+        self._check_cycles()
+
+    # ------------------------
+    def _check_cycles(self):
+        """Detect circular dependencies (e.g., PE→EE→PE)."""
+        graph = {}
+        for p in self.paths:
+            graph.setdefault(p.source, []).append(p.target)
+
+        visited = set()
+        stack = set()
+
+        def dfs(node):
+            if node in stack:
+                raise ValueError(f"Circular dependency detected involving '{node}'.")
+            if node in visited:
+                return
+            visited.add(node)
+            stack.add(node)
+            for nxt in graph.get(node, []):
+                dfs(nxt)
+            stack.remove(node)
+
+        for node in graph:
+            dfs(node)
 
 
 # ============================================================
@@ -85,9 +118,7 @@ class StructuralConfig:
 
 @dataclass
 class ConstructConfig:
-    """
-    Defines a reflective latent construct and its item-generation rules.
-    """
+    """Defines reflective construct + indicator generation rules."""
     name: str
     n_items: int
 
@@ -107,7 +138,7 @@ class ConstructConfig:
 
     def __post_init__(self):
         self.name = str(self.name).strip()
-        if self.name == "":
+        if not self.name:
             raise ValueError("Construct name cannot be empty.")
         if self.n_items <= 0:
             raise ValueError(f"Construct '{self.name}' must have at least one item.")
@@ -115,12 +146,19 @@ class ConstructConfig:
         if self.distribution not in {"normal", "skewed", "uniform", "lognormal", "beta"}:
             raise ValueError(f"Unsupported distribution type: {self.distribution}")
 
-        # Ensure loading bounds are logical
+        # Loading bounds
         if not (0 < self.target_loading_min <= self.target_loading_mean <= self.target_loading_max < 1):
-            raise ValueError(
-                f"Invalid loading bounds for '{self.name}'. "
-                "Require: 0 < min ≤ mean ≤ max < 1."
-            )
+            raise ValueError(f"Invalid loading bounds for '{self.name}'.")
+
+        # Skew/kurtosis realism bounds
+        if abs(self.skew) > 5:
+            raise ValueError(f"Unrealistic skew for construct '{self.name}'.")
+        if not (1 <= self.kurtosis <= 50):
+            raise ValueError(f"Unrealistic kurtosis for construct '{self.name}'.")
+
+        # Reverse-coded items limit
+        if self.reverse_items > self.n_items:
+            raise ValueError(f"Reverse items exceed total items in construct '{self.name}'.")
 
 
 # ============================================================
@@ -129,9 +167,6 @@ class ConstructConfig:
 
 @dataclass
 class SampleConfig:
-    """
-    Controls sampling properties for the dataset.
-    """
     n_respondents: int = 500
     likert_min: int = 1
     likert_max: int = 5
@@ -139,14 +174,14 @@ class SampleConfig:
     random_seed: Optional[int] = 123
 
     def __post_init__(self):
-        if self.likert_max <= self.likert_min:
-            raise ValueError("Likert max must be greater than min.")
         if self.n_respondents <= 0:
             raise ValueError("Sample size must be positive.")
+        if self.likert_max <= self.likert_min:
+            raise ValueError("Likert max must be greater than min.")
 
 
 # ============================================================
-# DEMOGRAPHIC CONFIGURATION
+# DEMOGRAPHIC CONFIG
 # ============================================================
 
 @dataclass
@@ -155,7 +190,7 @@ class DemographicConfig:
 
 
 # ============================================================
-# RESPONSE BIAS CONFIGURATION
+# RESPONSE BIAS CONFIG
 # ============================================================
 
 @dataclass
@@ -163,27 +198,34 @@ class BiasConfig:
     careless_rate: float = 0.0
     straightlining_rate: float = 0.0
     random_response_rate: float = 0.0
-    acquiescence_level: float = 0.0
-    midpoint_bias_level: float = 0.0
-    extreme_bias_level: float = 0.0
+    acquiescence_level: float = 0.0   # -1 to +1
+    midpoint_bias_level: float = 0.0  # 0 to 1
+    extreme_bias_level: float = 0.0   # 0 to 1
+    missing_rate: float = 0.0         # 0 to 0.5
 
     def validate(self):
-        for name, val in self.__dict__.items():
-            if not isinstance(val, (int, float)):
-                raise ValueError(f"Bias parameter '{name}' must be numeric.")
-            if abs(val) > 5:
-                raise ValueError(f"Bias parameter '{name}' has unrealistic magnitude: {val}")
+        if not (0 <= self.careless_rate <= 1):
+            raise ValueError("Careless rate must be between 0 and 1.")
+        if not (0 <= self.straightlining_rate <= 1):
+            raise ValueError("Straightlining rate must be between 0 and 1.")
+        if not (0 <= self.random_response_rate <= 1):
+            raise ValueError("Random responding rate must be between 0 and 1.")
+        if not (-1 <= self.acquiescence_level <= 1):
+            raise ValueError("Acquiescence must be in [-1, 1].")
+        if not (0 <= self.midpoint_bias_level <= 1):
+            raise ValueError("Midpoint bias must be 0–1.")
+        if not (0 <= self.extreme_bias_level <= 1):
+            raise ValueError("Extreme bias must be 0–1.")
+        if not (0 <= self.missing_rate <= 0.5):
+            raise ValueError("Missing-rate must be 0–0.5.")
 
 
 # ============================================================
-# GLOBAL MODEL CONFIGURATION
+# GLOBAL MODEL CONFIG
 # ============================================================
 
 @dataclass
 class ModelConfig:
-    """
-    High-level configuration object controlling the entire data-generation pipeline.
-    """
     project_name: str
     researcher_name: str
 
@@ -192,7 +234,6 @@ class ModelConfig:
     sample: SampleConfig = field(default_factory=SampleConfig)
     demographics: DemographicConfig = field(default_factory=DemographicConfig)
     bias: BiasConfig = field(default_factory=BiasConfig)
-
     structural: StructuralConfig = field(
         default_factory=lambda: StructuralConfig(paths=[], r2_targets={})
     )
@@ -200,39 +241,31 @@ class ModelConfig:
     metadata: Dict[str, str] = field(default_factory=dict)
 
     def validate(self):
-        """
-        Validates all subcomponents for safe dataset generation.
-        """
-        # Validate constructs
+        # Construct name uniqueness
         names = set()
         for c in self.constructs:
             if c.name in names:
-                raise ValueError(f"Duplicate construct name detected: '{c.name}'")
+                raise ValueError(f"Duplicate construct: '{c.name}'")
             names.add(c.name)
 
-        # Validate structural model
-        self.structural.validate()
+        # Validate structural relative to constructs
+        self.structural.validate(construct_names=list(names))
 
-        # Validate bias parameters
+        # Validate bias settings
         self.bias.validate()
 
-        # Sample validation already done in SampleConfig
-
+        return True
 
     def describe(self) -> Dict[str, object]:
-        """
-        Returns a clean serializable summary for debugging or export.
-        """
         return {
             "project_name": self.project_name,
             "researcher": self.researcher_name,
+            "constructs": [c.name for c in self.constructs],
             "n_constructs": len(self.constructs),
-            "construct_names": [c.name for c in self.constructs],
-            "n_respondents": self.sample.n_respondents,
+            "sample_size": self.sample.n_respondents,
             "likert_range": (self.sample.likert_min, self.sample.likert_max),
             "structural_paths": [(p.source, p.target, p.beta) for p in self.structural.paths],
             "r2_targets": self.structural.r2_targets,
-            "has_demographics": self.demographics.add_demographics,
+            "demographics_enabled": self.demographics.add_demographics,
             "bias_settings": self.bias.__dict__,
-            "metadata": self.metadata,
         }

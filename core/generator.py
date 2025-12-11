@@ -1,19 +1,18 @@
 """
 core/generator.py
 -----------------
-The foundational measurement engine for DataSmartPLS4.0.
+Integrated structural + measurement engine for DataSmartPLS4.0.
 
-This module generates:
-- latent variables
-- item-level reflective indicators
-- Likert-scale outputs
-- basic demographics
+This module now supports:
+- full structural latent generation (unlimited paths, multi-equation SEM)
+- reflective measurement model generation
+- Likert-scale output
+- demographic generation
+- backward compatibility (no structural model → independent latents)
 
-Later extensions will add:
-- bias simulation
-- structural model generation
-- multi-group data
-- diagnostics
+Later extensions:
+- bias simulation (already in core/bias)
+- multi-group simulation
 - exports
 """
 
@@ -26,96 +25,43 @@ from .config import (
     ModelConfig,
     ConstructConfig,
     SampleConfig,
-    DemographicConfig,
 )
+from .structural import simulate_structural_latents
 
 
 # ============================================================
-# LATENT VARIABLE GENERATION
-# ============================================================
-
-def _generate_latent(construct: ConstructConfig, sample: SampleConfig) -> np.ndarray:
-    """
-    Generate latent variable scores for one construct.
-    Provides several distribution options:
-    - normal
-    - skewed
-    - uniform
-    - lognormal
-    - beta
-    """
-    n = sample.n_respondents
-    rng = np.random.default_rng(sample.random_seed)
-
-    mean = construct.latent_mean
-    sd = construct.latent_sd
-
-    dist = construct.distribution
-
-    if dist == "normal":
-        latent = rng.normal(loc=mean, scale=sd, size=n)
-
-    elif dist == "uniform":
-        low = mean - np.sqrt(3) * sd
-        high = mean + np.sqrt(3) * sd
-        latent = rng.uniform(low=low, high=high, size=n)
-
-    elif dist == "lognormal":
-        latent = rng.lognormal(mean=mean, sigma=abs(sd), size=n)
-
-    elif dist == "skewed":
-        base = rng.normal(loc=0.0, scale=1.0, size=n)
-        skew_factor = np.clip(construct.skew, -2.0, 2.0)
-
-        if skew_factor >= 0:
-            latent = np.exp(skew_factor * base)
-        else:
-            latent = -np.exp(-skew_factor * base)
-
-        # standardize + scale back
-        latent = (latent - latent.mean()) / (latent.std() + 1e-8)
-        latent = mean + sd * latent
-
-    elif dist == "beta":
-        a, b = 2.0, 2.0
-        x = rng.beta(a, b, size=n)
-        latent = (x - x.mean()) / (x.std() + 1e-8)
-        latent = mean + sd * latent
-
-    else:
-        latent = rng.normal(loc=mean, scale=sd, size=n)
-
-    return latent
-
-
-# ============================================================
-# ITEM GENERATION
+# ITEM LOADINGS
 # ============================================================
 
 def _sample_loadings(construct: ConstructConfig, rng) -> np.ndarray:
     """
-    Sample item loadings in allowed range.
-    Center around target mean for realism.
+    Sample item loadings around target ranges for realism.
     """
     low = max(0.1, min(construct.target_loading_min, construct.target_loading_max))
     high = min(0.99, max(construct.target_loading_min, construct.target_loading_max))
 
     loadings = rng.uniform(low=low, high=high, size=construct.n_items)
 
-    # shift toward target mean
+    # shift distribution toward target mean
     shift = construct.target_loading_mean - loadings.mean()
-    loadings = np.clip(loadings + shift, 0.1, 0.99)
+    loadings = np.clip(loadings + shift, 0.10, 0.99)
 
     return loadings
 
 
-def _generate_items_for_construct(construct: ConstructConfig, sample: SampleConfig) -> pd.DataFrame:
-    """
-    Generate Likert-scale items for a reflective construct.
-    """
-    rng = np.random.default_rng(sample.random_seed)
+# ============================================================
+# INDICATOR GENERATION (for reflective constructs)
+# ============================================================
 
-    latent = _generate_latent(construct, sample)
+def _generate_items_for_construct(
+    construct: ConstructConfig,
+    latent: np.ndarray,
+    sample: SampleConfig,
+    rng: np.random.Generator
+) -> pd.DataFrame:
+    """
+    Generate Likert-scale indicators for one construct using its latent scores.
+    """
     loadings = _sample_loadings(construct, rng)
 
     n = sample.n_respondents
@@ -131,9 +77,9 @@ def _generate_items_for_construct(construct: ConstructConfig, sample: SampleConf
         error_sd = np.sqrt(error_var)
 
         eps = rng.normal(loc=0.0, scale=error_sd, size=n)
-        raw = lam * latent + eps  # continuous score
+        raw = lam * latent + eps  # continuous indicator value
 
-        # convert to Likert categories
+        # convert to Likert categories via quantile binning
         try:
             categories = pd.qcut(raw, q=n_cat, labels=False, duplicates="drop")
         except ValueError:
@@ -151,18 +97,17 @@ def _generate_items_for_construct(construct: ConstructConfig, sample: SampleConf
 
 
 # ============================================================
-# DEMOGRAPHIC GENERATION (basic version)
+# DEMOGRAPHIC GENERATION (basic)
 # ============================================================
 
-def _generate_demographics(demo_cfg: DemographicConfig, sample: SampleConfig) -> pd.DataFrame:
-    """
-    Basic demographic profiles.
-    Later versions will allow custom distributions.
-    """
+def _generate_demographics(model_cfg: ModelConfig) -> pd.DataFrame:
+    demo_cfg = model_cfg.demographics
+    sample = model_cfg.sample
+
     if not demo_cfg.add_demographics:
         return pd.DataFrame(index=range(sample.n_respondents))
 
-    seed = (sample.random_seed or 0) + 999
+    seed = (sample.random_seed or 0) + 12345
     rng = np.random.default_rng(seed)
     n = sample.n_respondents
 
@@ -183,31 +128,66 @@ def _generate_demographics(demo_cfg: DemographicConfig, sample: SampleConfig) ->
 
 
 # ============================================================
-# MAIN API
+# MAIN PIPELINE (STRUCTURAL → MEASUREMENT)
 # ============================================================
 
 def generate_dataset(model_cfg: ModelConfig):
     """
-    Generate a complete synthetic dataset:
-    - demographics (optional)
-    - items for each construct
+    Master function that generates a complete synthetic dataset:
+
+    1. Generate all latent variables:
+       - If structural model exists → use structural simulation
+       - Otherwise → fallback to independent latent generation
+
+    2. Generate reflective indicators from latent variables.
+
+    3. Generate demographics (optional).
+
+    Returns:
+        full_df: demographics + indicators
+        items_df: indicator-only dataset
     """
     sample = model_cfg.sample
     constructs = model_cfg.constructs
+    rng = np.random.default_rng(sample.random_seed)
 
-    frames = []
+    # ========================================================
+    # 1. STRUCTURAL LATENT GENERATION
+    # ========================================================
+    latent_df = simulate_structural_latents(model_cfg)
+
+    # convert to dict of arrays for measurement engine
+    latent_scores = {c: latent_df[c].values for c in latent_df.columns}
+
+    # ========================================================
+    # 2. REFLECTIVE INDICATOR GENERATION
+    # ========================================================
+    item_frames = []
+
     for c in constructs:
         if c.n_items <= 0:
             continue
-        df = _generate_items_for_construct(c, sample)
-        frames.append(df)
 
-    if not frames:
+        latent_vector = latent_scores[c.name]
+        df_items = _generate_items_for_construct(
+            construct=c,
+            latent=latent_vector,
+            sample=sample,
+            rng=rng
+        )
+        item_frames.append(df_items)
+
+    if not item_frames:
         raise ValueError("No constructs with n_items > 0.")
 
-    items_df = pd.concat(frames, axis=1)
-    demo_df = _generate_demographics(model_cfg.demographics, sample)
+    items_df = pd.concat(item_frames, axis=1)
 
+    # ========================================================
+    # 3. DEMOGRAPHICS
+    # ========================================================
+    demo_df = _generate_demographics(model_cfg)
+
+    # merge and return
     if demo_df.empty:
         full_df = items_df.reset_index(drop=True)
     else:

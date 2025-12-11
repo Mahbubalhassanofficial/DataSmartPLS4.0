@@ -51,16 +51,10 @@ n_respondents = st.sidebar.number_input(
     "Number of respondents (N)", min_value=30, max_value=200000, value=500, step=10
 )
 
-likert_min = st.sidebar.number_input(
-    "Likert minimum", min_value=1, max_value=3, value=1, step=1
-)
-likert_max = st.sidebar.number_input(
-    "Likert maximum", min_value=3, max_value=10, value=5, step=1
-)
+likert_min = st.sidebar.number_input("Likert minimum", min_value=1, max_value=3, value=1)
+likert_max = st.sidebar.number_input("Likert maximum", min_value=3, max_value=10, value=5)
 
-random_seed = st.sidebar.number_input(
-    "Random seed", min_value=0, max_value=999999, value=123, step=1
-)
+random_seed = st.sidebar.number_input("Random seed", min_value=0, max_value=999999, value=123)
 
 add_demographics = st.sidebar.checkbox("Include synthetic demographics", value=True)
 
@@ -73,11 +67,7 @@ if likert_max <= likert_min:
 # ------------------------------------------------
 st.subheader("1. Define Measurement Constructs")
 
-st.markdown(
-    """
-Each row defines **one reflective latent construct**.
-"""
-)
+st.markdown("Each row defines **one reflective latent construct**.")
 
 default_constructs = pd.DataFrame(
     [
@@ -128,7 +118,7 @@ construct_df = st.data_editor(
 )
 
 # enforce types
-construct_df["name"] = construct_df["name"].astype(str).strip()
+construct_df["name"] = construct_df["name"].astype(str).str.strip()   # FIXED
 construct_df["n_items"] = pd.to_numeric(construct_df["n_items"], errors="coerce").fillna(0).astype(int)
 
 for col in [
@@ -154,28 +144,15 @@ if "structural_config_raw" in st.session_state:
     paths = []
     for p in raw.get("paths", []):
         try:
-            paths.append(
-                PathConfig(
-                    source=str(p["source"]),
-                    target=str(p["target"]),
-                    beta=float(p["beta"]),
-                )
-            )
+            paths.append(PathConfig(source=str(p["source"]), target=str(p["target"]), beta=float(p["beta"])))
         except:
             pass
 
-    r2_dict = {
-        k: float(v)
-        for k, v in raw.get("r2_targets", {}).items()
-        if v is not None and v > 0
-    }
+    r2_dict = {k: float(v) for k, v in raw.get("r2_targets", {}).items() if v is not None and v > 0}
 
     structural_cfg = StructuralConfig(paths=paths, r2_targets=r2_dict)
 
-    st.success(
-        f"Structural model detected: {len(paths)} paths · "
-        f"R² for {len(r2_dict)} constructs."
-    )
+    st.success(f"Structural model detected: {len(paths)} paths · R² for {len(r2_dict)} constructs.")
     st.json(raw)
 else:
     st.info("No structural model found. Data will be generated without structural relations.")
@@ -238,7 +215,6 @@ if st.button("Generate synthetic data", type="primary"):
                 structural=structural_cfg,
             )
 
-            # 🎯 generate dataset
             full_df, items_df = generate_dataset(model_cfg)
 
         # Save for ExportCenter
@@ -253,7 +229,7 @@ if st.button("Generate synthetic data", type="primary"):
         st.markdown("### Preview (first 10 rows)")
         st.dataframe(full_df.head(10), use_container_width=True)
 
-        st.markdown("### Descriptive statistics (numeric columns)")
+        st.markdown("### Descriptive statistics")
         st.dataframe(full_df.describe(), use_container_width=True)
 
 else:

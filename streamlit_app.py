@@ -1,41 +1,39 @@
 import streamlit as st
 
 # ============================================================
-#  GLOBAL APP CONFIG (WITH FAVICON + THEME OVERRIDES)
+#  GLOBAL APP CONFIG
 # ============================================================
 st.set_page_config(
     page_title="DataSmartPLS4.0 – Synthetic PLS-SEM Studio",
-    page_icon="📊",        # Favicon (emoji-based, works everywhere)
     layout="wide",
 )
 
-# ---- GLOBAL THEME OVERRIDE (BRANDING CONSISTENCY) ----
-st.markdown("""
-    <style>
-        /* PRIMARY BRAND COLORS */
-        :root {
-            --primary-color: #7b2cbf;
-            --primaryColor: #7b2cbf !important;
-            --text-color: #444444;
-        }
+# ============================================================
+#  GLOBAL SESSION INITIALIZATION FIX
+# ============================================================
+# Prevents structural model & generated data from being lost on page switch
 
-        /* Improve sidebar text visibility */
-        section[data-testid="stSidebar"] .stMarkdown, 
-        section[data-testid="stSidebar"] label {
-            color: #333333 !important;
-        }
+if "structural_config_raw" not in st.session_state:
+    st.session_state["structural_config_raw"] = {
+        "paths": [],
+        "r2_targets": {}
+    }
 
-        /* Remove Streamlit top padding for cleaner layout */
-        .block-container {
-            padding-top: 1.2rem;
-        }
-    </style>
-""", unsafe_allow_html=True)
+if "last_full_df" not in st.session_state:
+    st.session_state["last_full_df"] = None
+
+if "last_items_df" not in st.session_state:
+    st.session_state["last_items_df"] = None
+
+if "last_model_cfg" not in st.session_state:
+    st.session_state["last_model_cfg"] = None
 
 
 # ============================================================
-#  IMPORT PAGE MODULES (each must have run())
+#  IMPORT PAGE MODULES
 # ============================================================
+# All pages MUST have a run() function
+
 from app.Home import run as home
 from app.StructuralModel import run as structural
 from app.MeasurementModel import run as measurement
@@ -50,10 +48,10 @@ from app.ExportCenter import run as export_center
 
 st.sidebar.markdown(
     """
-    <div style="font-size:1.4rem; font-weight:800; color:#7b2cbf;">
-        DataSmartPLS <span style="font-size:1.1rem;">4.0</span>
+    <div style="font-size:1.2rem; font-weight:700; color:#7b2cbf;">
+        DataSmartPLS4.0
     </div>
-    <div style="font-size:0.85rem; color:#666; margin-top:-6px; margin-bottom:14px;">
+    <div style="font-size:0.85rem; color:#666; margin-bottom:12px;">
         Synthetic SEM · SmartPLS · fsQCA Data Studio
     </div>
     """,
@@ -68,10 +66,9 @@ PAGE = st.sidebar.selectbox(
         "Measurement Model",
         "Bias Simulation",
         "Diagnostics",
-        "Export Center",
+        "Export Center"
     ]
 )
-
 
 # ============================================================
 #  PAGE ROUTER

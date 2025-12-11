@@ -1,18 +1,41 @@
 import streamlit as st
 
 # ============================================================
-#  GLOBAL APP CONFIG
+#  GLOBAL APP CONFIG (WITH FAVICON + THEME OVERRIDES)
 # ============================================================
 st.set_page_config(
     page_title="DataSmartPLS4.0 – Synthetic PLS-SEM Studio",
+    page_icon="📊",        # Favicon (emoji-based, works everywhere)
     layout="wide",
 )
 
-# ============================================================
-#  IMPORT PAGE MODULES
-# ============================================================
-# All pages MUST have a run() function
+# ---- GLOBAL THEME OVERRIDE (BRANDING CONSISTENCY) ----
+st.markdown("""
+    <style>
+        /* PRIMARY BRAND COLORS */
+        :root {
+            --primary-color: #7b2cbf;
+            --primaryColor: #7b2cbf !important;
+            --text-color: #444444;
+        }
 
+        /* Improve sidebar text visibility */
+        section[data-testid="stSidebar"] .stMarkdown, 
+        section[data-testid="stSidebar"] label {
+            color: #333333 !important;
+        }
+
+        /* Remove Streamlit top padding for cleaner layout */
+        .block-container {
+            padding-top: 1.2rem;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+
+# ============================================================
+#  IMPORT PAGE MODULES (each must have run())
+# ============================================================
 from app.Home import run as home
 from app.StructuralModel import run as structural
 from app.MeasurementModel import run as measurement
@@ -27,10 +50,10 @@ from app.ExportCenter import run as export_center
 
 st.sidebar.markdown(
     """
-    <div style="font-size:1.2rem; font-weight:700; color:#7b2cbf;">
-        DataSmartPLS4.0
+    <div style="font-size:1.4rem; font-weight:800; color:#7b2cbf;">
+        DataSmartPLS <span style="font-size:1.1rem;">4.0</span>
     </div>
-    <div style="font-size:0.85rem; color:#666; margin-bottom:12px;">
+    <div style="font-size:0.85rem; color:#666; margin-top:-6px; margin-bottom:14px;">
         Synthetic SEM · SmartPLS · fsQCA Data Studio
     </div>
     """,
@@ -45,9 +68,10 @@ PAGE = st.sidebar.selectbox(
         "Measurement Model",
         "Bias Simulation",
         "Diagnostics",
-        "Export Center"
+        "Export Center",
     ]
 )
+
 
 # ============================================================
 #  PAGE ROUTER

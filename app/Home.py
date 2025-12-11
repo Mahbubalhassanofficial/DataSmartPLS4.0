@@ -15,10 +15,12 @@ from app.branding import render_app_header, render_app_footer
 
 
 # ============================================================
-#  PAGE FUNCTION (required for navigation)
+#  PAGE FUNCTION (used by streamlit_app.py)
 # ============================================================
 def run():
-    # Header
+    # --------------------------------------------------------
+    # HEADER
+    # --------------------------------------------------------
     render_app_header("Home · Data Generator")
 
     st.markdown(
@@ -59,7 +61,7 @@ def run():
         )
 
         random_seed = st.number_input(
-            "Random seed", min_value=0, max_value=999_999, value=123
+            "Random seed", min_value=0, max_value=999_999, value=123, step=1
         )
 
         add_demographics = st.checkbox(
@@ -123,25 +125,38 @@ def run():
         key="construct_editor",
     )
 
-    # Clean & enforce correct datatypes
+    # ---------- Clean & enforce datatypes ----------
     construct_df["name"] = construct_df["name"].astype(str).str.strip()
 
     numeric_cols_int = ["n_items"]
     numeric_cols_float = [
-        "latent_mean", "latent_sd", "skew", "kurtosis",
-        "target_loading_mean", "target_loading_min", "target_loading_max",
+        "latent_mean",
+        "latent_sd",
+        "skew",
+        "kurtosis",
+        "target_loading_mean",
+        "target_loading_min",
+        "target_loading_max",
     ]
 
     for col in numeric_cols_int:
-        construct_df[col] = pd.to_numeric(construct_df[col], errors="coerce").fillna(0).astype(int)
+        construct_df[col] = (
+            pd.to_numeric(construct_df[col], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
 
     for col in numeric_cols_float:
         construct_df[col] = pd.to_numeric(construct_df[col], errors="coerce")
 
     construct_df["distribution"] = (
-        construct_df["distribution"].astype(str).str.lower().replace({"": "normal"})
+        construct_df["distribution"]
+        .astype(str)
+        .str.lower()
+        .replace({"": "normal"})
     )
 
+    # Keep only valid constructs
     construct_df = construct_df[
         (construct_df["name"] != "") & (construct_df["n_items"] > 0)
     ].reset_index(drop=True)
@@ -164,26 +179,29 @@ def run():
                 beta_val = float(p.get("beta", 0.0))
                 if src and tgt:
                     paths.append(PathConfig(source=src, target=tgt, beta=beta_val))
-            except:
+            except Exception:
                 continue
 
         r2_dict = {}
         for k, v in raw.get("r2_targets", {}).items():
             try:
-                v = float(v)
-                if v > 0:
-                    r2_dict[str(k)] = v
-            except:
+                val = float(v)
+                if val > 0:
+                    r2_dict[str(k)] = val
+            except Exception:
                 continue
 
         structural_cfg = StructuralConfig(paths=paths, r2_targets=r2_dict)
 
         st.success(
-            f"Structural model detected: {len(paths)} paths · R² for {len(r2_dict)} constructs."
+            f"Structural model detected: {len(paths)} paths · "
+            f"R² specified for {len(r2_dict)} constructs."
         )
         st.json(raw)
     else:
-        st.info("No structural model found. Data will be generated without structural relations.")
+        st.info(
+            "No structural model found. Data will be generated without structural relations."
+        )
 
     # ============================================================
     # 3. GENERATE DATA
@@ -194,36 +212,47 @@ def run():
 
         if likert_max <= likert_min:
             st.error("Fix Likert scale: maximum must be greater than minimum.")
+            render_app_footer()
             return
 
-        if construct_df.empty:
-            st.error("You must define at least one construct.")
+        if construct_df.empty or construct_df["n_items"].sum() <= 0:
+            st.error("You must define at least one construct with at least one item.")
+            render_app_footer()
             return
 
-        with st.spinner("Generating dataset..."):
+        with st.spinner("Generating dataset using structural + measurement engine..."):
 
             constructs = []
             for _, row in construct_df.iterrows():
+                # robust fallbacks for missing numeric values
+                latent_mean = float(row["latent_mean"]) if pd.notna(row["latent_mean"]) else 0.0
+                latent_sd = float(row["latent_sd"]) if pd.notna(row["latent_sd"]) else 1.0
+                skew = float(row["skew"]) if pd.notna(row["skew"]) else 0.0
+                kurt = float(row["kurtosis"]) if pd.notna(row["kurtosis"]) else 3.0
+                t_mean = float(row["target_loading_mean"]) if pd.notna(row["target_loading_mean"]) else 0.75
+                t_min = float(row["target_loading_min"]) if pd.notna(row["target_loading_min"]) else 0.60
+                t_max = float(row["target_loading_max"]) if pd.notna(row["target_loading_max"]) else 0.90
+
                 constructs.append(
                     ConstructConfig(
                         name=row["name"],
-                        n_items=row["n_items"],
-                        latent_mean=row["latent_mean"] or 0.0,
-                        latent_sd=row["latent_sd"] or 1.0,
+                        n_items=int(row["n_items"]),
+                        latent_mean=latent_mean,
+                        latent_sd=latent_sd,
                         distribution=row["distribution"],
-                        skew=row["skew"] or 0.0,
-                        kurtosis=row["kurtosis"] or 3.0,
-                        target_loading_mean=row["target_loading_mean"] or 0.75,
-                        target_loading_min=row["target_loading_min"] or 0.60,
-                        target_loading_max=row["target_loading_max"] or 0.90,
+                        skew=skew,
+                        kurtosis=kurt,
+                        target_loading_mean=t_mean,
+                        target_loading_min=t_min,
+                        target_loading_max=t_max,
                     )
                 )
 
             sample_cfg = SampleConfig(
-                n_respondents=n_respondents,
-                likert_min=likert_min,
-                likert_max=likert_max,
-                random_seed=random_seed,
+                n_respondents=int(n_respondents),
+                likert_min=int(likert_min),
+                likert_max=int(likert_max),
+                random_seed=int(random_seed),
             )
 
             demo_cfg = DemographicConfig(add_demographics=add_demographics)
@@ -239,20 +268,27 @@ def run():
                 structural=structural_cfg,
             )
 
-            full_df, items_df = generate_dataset(model_cfg)
+            try:
+                full_df, items_df = generate_dataset(model_cfg)
+            except Exception as e:
+                st.error(f"Dataset generation failed: {e}")
+                render_app_footer()
+                return
 
-        # Save to session for ExportCenter
+        # Save to session for ExportCenter & others
         st.session_state["last_full_df"] = full_df
         st.session_state["last_items_df"] = items_df
         st.session_state["last_model_cfg"] = model_cfg
 
         st.success(f"Generated dataset: {full_df.shape[0]} rows × {full_df.shape[1]} columns.")
 
-        st.markdown(f"### Preview (first 10 rows)")
+        st.markdown("### Preview (first 10 rows)")
         st.dataframe(full_df.head(10), use_container_width=True)
 
         st.markdown("### Descriptive statistics")
         st.dataframe(full_df.describe(), use_container_width=True)
 
-    # Footer
+    # --------------------------------------------------------
+    # FOOTER
+    # --------------------------------------------------------
     render_app_footer()

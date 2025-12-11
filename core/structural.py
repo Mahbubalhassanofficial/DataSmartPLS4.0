@@ -32,7 +32,7 @@ from .config import (
 
 
 # ============================================================
-# LATENT DISTRIBUTION (copied from generator logic, simplified)
+# LATENT DISTRIBUTION (EXOGENOUS GENERATION)
 # ============================================================
 
 def _generate_exogenous_latent(
@@ -71,12 +71,14 @@ def _generate_exogenous_latent(
         latent = mean + sd * latent
 
     elif dist == "beta":
+        # Simple symmetric beta, then standardized and rescaled
         a, b = 2.0, 2.0
         x = rng.beta(a, b, size=n)
         latent = (x - x.mean()) / (x.std() + 1e-8)
         latent = mean + sd * latent
 
     else:
+        # Fallback: normal
         latent = rng.normal(loc=mean, scale=sd, size=n)
 
     return latent
@@ -133,7 +135,7 @@ def _topological_sort(
         node = queue.pop(0)
         order.append(node)
 
-        # any children of this node?
+        # Any children of this node? (loop over parents dict)
         for tgt, srcs in parents.items():
             if node in srcs:
                 in_deg[tgt] -= 1
@@ -162,36 +164,59 @@ def simulate_structural_latents(model_cfg: ModelConfig) -> pd.DataFrame:
         pandas DataFrame with columns = construct names,
         rows = respondents.
     """
-    constructs = model_cfg.constructs
     sample = model_cfg.sample
     structural = model_cfg.structural
-
     rng = np.random.default_rng(sample.random_seed)
 
-    # Map construct name -> ConstructConfig
-    cons_map: Dict[str, ConstructConfig] = {c.name: c for c in constructs}
+    # --------------------------------------------------------------------
+    # Construct map: support both list and dict in ModelConfig.constructs
+    # --------------------------------------------------------------------
+    constructs_raw = model_cfg.constructs
 
+    if isinstance(constructs_raw, dict):
+        cons_map: Dict[str, ConstructConfig] = {
+            name: c for name, c in constructs_raw.items()
+        }
+        construct_order: List[str] = list(cons_map.keys())
+    else:
+        # assume iterable of ConstructConfig
+        cons_map = {c.name: c for c in constructs_raw}
+        construct_order = [c.name for c in constructs_raw]
+
+    if not cons_map:
+        raise ValueError("No constructs found in ModelConfig for structural simulation.")
+
+    # --------------------------------------------------------
+    # Case 1: No structural paths → all constructs independent
+    # --------------------------------------------------------
     if not structural.paths:
-        # No structural relations specified → generate each construct independently
         latent_scores = {}
-        for c in constructs:
-            latent_scores[c.name] = _generate_exogenous_latent(c, sample, rng)
-        return pd.DataFrame(latent_scores)
+        for name, c in cons_map.items():
+            latent_scores[name] = _generate_exogenous_latent(c, sample, rng)
+        df_latent = pd.DataFrame(latent_scores)
+        # reorder columns to declared construct order
+        df_latent = df_latent[construct_order]
+        return df_latent
 
-    # Build graph from paths
+    # --------------------------------------------------------
+    # Case 2: Structural relations present
+    # --------------------------------------------------------
     nodes, parents, _children = _build_graph(structural)
 
     # Ensure all constructs in paths exist in config
     for n in nodes:
         if n not in cons_map:
-            raise ValueError(f"Construct '{n}' appears in structural paths but is not defined in constructs.")
+            raise ValueError(
+                f"Construct '{n}' appears in structural paths "
+                f"but is not defined in ModelConfig.constructs."
+            )
 
-    # Add constructs that are not referenced in any path (purely exogenous)
-    for c in constructs:
-        if c.name not in nodes:
-            nodes.add(c.name)
+    # Add constructs that are not referenced in any path (pure exogenous)
+    for name in cons_map.keys():
+        if name not in nodes:
+            nodes.add(name)
 
-    # Recompute topological order
+    # Topological order over all nodes
     order = _topological_sort(nodes, parents)
 
     latent_scores: Dict[str, np.ndarray] = {}
@@ -204,42 +229,41 @@ def simulate_structural_latents(model_cfg: ModelConfig) -> pd.DataFrame:
 
     # Second pass: generate endogenous constructs
     for name in order:
+        # Already generated as exogenous
         if name in latent_scores and (name not in parents or len(parents.get(name, [])) == 0):
-            # Already generated as exogenous
             continue
 
+        # If a construct has no parents, treat as exogenous
         if name not in parents or len(parents[name]) == 0:
-            # No parents → treat as exogenous
             c_cfg = cons_map[name]
             latent_scores[name] = _generate_exogenous_latent(c_cfg, sample, rng)
             continue
 
-        # endogenous construct: combine parents
+        # Endogenous construct: combine parents
         parent_names = parents[name]
-        betas = []
+        betas: List[Tuple[str, float]] = []
 
         for p in structural.paths:
             if p.target == name and p.source in parent_names:
                 betas.append((p.source, p.beta))
 
         if not betas:
-            # no beta defined? treat as exogenous
+            # No β defined → treat as exogenous
             c_cfg = cons_map[name]
             latent_scores[name] = _generate_exogenous_latent(c_cfg, sample, rng)
             continue
 
-        # build linear combination of standardized parent latents
+        # Build linear combination of standardized parent latents
         parent_matrix = []
         beta_vector = []
 
         for src_name, beta in betas:
             if src_name not in latent_scores:
                 raise ValueError(
-                    f"Parent construct '{src_name}' for '{name}' has not been generated yet. "
-                    "Check structural paths for cycles or incorrect ordering."
+                    f"Parent construct '{src_name}' for '{name}' "
+                    f"has not been generated yet. Check structural paths."
                 )
             vals = latent_scores[src_name]
-            # standardize parent to mean=0, sd=1
             z = (vals - vals.mean()) / (vals.std() + 1e-8)
             parent_matrix.append(z)
             beta_vector.append(beta)
@@ -247,48 +271,46 @@ def simulate_structural_latents(model_cfg: ModelConfig) -> pd.DataFrame:
         parent_matrix = np.vstack(parent_matrix)  # shape: (n_parents, n_obs)
         beta_vector = np.array(beta_vector).reshape(-1, 1)
 
-        # predicted component
-        lin_comb = np.dot(beta_vector.T, parent_matrix).flatten()  # shape: (n_obs,)
+        # Linear predictor
+        lin_comb = np.dot(beta_vector.T, parent_matrix).flatten()
 
-        # standardize linear predictor
+        # Standardize linear predictor
         lin_comb = (lin_comb - lin_comb.mean()) / (lin_comb.std() + 1e-8)
 
-        # decide R² target if available
+        # Decide R² target (if available)
         r2_dict = structural.r2_targets or {}
         r2_target = float(r2_dict.get(name, 0.0))
         r2_target = float(np.clip(r2_target, 0.0, 0.95))
 
         if r2_target <= 0:
-            # heuristic R² based on beta magnitudes
-            heuristic = np.sum(np.square(beta_vector)) / (1.0 + np.sum(np.square(beta_vector)))
-            r2 = float(np.clip(heuristic, 0.1, 0.7))
+            # Heuristic R² based on beta magnitudes
+            beta_sq_sum = float(np.sum(np.square(beta_vector)))
+            heuristic = beta_sq_sum / (1.0 + beta_sq_sum)
+            r2 = float(np.clip(heuristic, 0.10, 0.70))
         else:
             r2 = r2_target
 
-        # simulate structural disturbance
+        # Structural disturbance
         eps = rng.normal(loc=0.0, scale=1.0, size=sample.n_respondents)
 
-        # combine predictor and error to achieve approximated R²
+        # Combine predictor and error to approximate R²
         y_std = np.sqrt(r2) * lin_comb + np.sqrt(1.0 - r2) * eps
 
-        # rescale to construct's mean and sd
+        # Rescale to construct's mean and SD
         c_cfg = cons_map[name]
         y = (y_std - y_std.mean()) / (y_std.std() + 1e-8)
         y = c_cfg.latent_mean + c_cfg.latent_sd * y
 
         latent_scores[name] = y
 
-    # ensure all constructs in model are represented in output
-    for c in constructs:
-        if c.name not in latent_scores:
-            # fallback: generate as exogenous
-            latent_scores[c.name] = _generate_exogenous_latent(c, sample, rng)
+    # Ensure all constructs present in output (fallback exogenous if missing)
+    for name, c in cons_map.items():
+        if name not in latent_scores:
+            latent_scores[name] = _generate_exogenous_latent(c, sample, rng)
 
-    # return as DataFrame
     df_latent = pd.DataFrame(latent_scores)
 
-    # reorder columns to match the order of constructs in the config for consistency
-    ordered_cols = [c.name for c in constructs]
-    df_latent = df_latent[ordered_cols]
+    # Reorder columns to match declared construct order for consistency
+    df_latent = df_latent[construct_order]
 
     return df_latent

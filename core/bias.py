@@ -1,18 +1,19 @@
 """
 core/bias.py
 ------------
-Applies response behaviours and biases to synthetic datasets.
+High-performance bias & response-behaviour simulation engine
+for DataSmartPLS 4.0.
 
-Included in this foundational version:
+Includes:
 - careless responding
 - straight-lining
 - random responding
 - midpoint bias
 - extremity bias
 - acquiescence bias
-- missingness injection (MCAR)
+- missingness (MCAR)
 
-These functions receive a pandas DataFrame and return a modified DataFrame.
+All functions are vectorized as much as possible for speed.
 """
 
 from __future__ import annotations
@@ -21,129 +22,130 @@ import pandas as pd
 
 
 # --------------------------------------------------------------
-# 1. CARELESS RESPONSE (random noise replacing real values)
+# 1. CARELESS RESPONSE (cell-level random noise)
 # --------------------------------------------------------------
 def apply_careless(df: pd.DataFrame, rate: float, likert_min: int, likert_max: int) -> pd.DataFrame:
     if rate <= 0:
-        return df
+        return df.copy()
 
     out = df.copy()
-    n, k = df.shape
-
-    rng = np.random.default_rng()
-
+    n, k = out.shape
     total = n * k
     n_affect = int(total * rate)
 
-    # pick random cells
+    rng = np.random.default_rng()
+
+    # Random cell coordinates
     rows = rng.integers(0, n, size=n_affect)
     cols = rng.integers(0, k, size=n_affect)
 
-    for r, c in zip(rows, cols):
-        out.iat[r, c] = rng.integers(likert_min, likert_max + 1)
+    # Generate random values in one vectorized step
+    random_values = rng.integers(likert_min, likert_max + 1, size=n_affect)
+    out.values[rows, cols] = random_values
 
     return out
 
 
 # --------------------------------------------------------------
-# 2. STRAIGHT-LINING (same answer across all items)
+# 2. STRAIGHT-LINING (row-level constant responses)
 # --------------------------------------------------------------
 def apply_straightlining(df: pd.DataFrame, rate: float, likert_min: int, likert_max: int) -> pd.DataFrame:
     if rate <= 0:
-        return df
+        return df.copy()
 
     out = df.copy()
-    n = df.shape[0]
+    n = out.shape[0]
 
     rng = np.random.default_rng()
     n_people = int(n * rate)
 
     rows = rng.choice(n, size=n_people, replace=False)
-    for r in rows:
-        value = rng.integers(likert_min, likert_max + 1)
-        out.iloc[r, :] = value
+    constant_values = rng.integers(likert_min, likert_max + 1, size=n_people)
+
+    # Fill entire row with its constant value
+    for i, r in enumerate(rows):
+        out.iloc[r, :] = constant_values[i]
 
     return out
 
 
 # --------------------------------------------------------------
-# 3. RANDOM RESPONDING (fully random for selected rows)
+# 3. RANDOM RESPONDING (full random rows)
 # --------------------------------------------------------------
 def apply_random_responding(df: pd.DataFrame, rate: float, likert_min: int, likert_max: int) -> pd.DataFrame:
     if rate <= 0:
-        return df
+        return df.copy()
 
     out = df.copy()
-    n = df.shape[0]
+    n, k = out.shape
 
     rng = np.random.default_rng()
     n_people = int(n * rate)
 
     rows = rng.choice(n, size=n_people, replace=False)
-    for r in rows:
-        out.iloc[r, :] = rng.integers(likert_min, likert_max + 1, size=df.shape[1])
+    random_matrix = rng.integers(likert_min, likert_max + 1, size=(n_people, k))
+
+    out.values[rows, :] = random_matrix
 
     return out
 
 
 # --------------------------------------------------------------
-# 4. MIDPOINT BIAS (shift values toward midpoint)
+# 4. MIDPOINT BIAS (pull values toward central Likert point)
 # --------------------------------------------------------------
 def apply_midpoint_bias(df: pd.DataFrame, level: float, likert_min: int, likert_max: int) -> pd.DataFrame:
     if level <= 0:
-        return df
+        return df.copy()
 
     out = df.copy()
     midpoint = (likert_min + likert_max) / 2
-    midpoint = int(round(midpoint))
 
-    # pull values toward midpoint
-    for col in out.columns:
-        out[col] = out[col].apply(
-            lambda x: int(round(x + level * (midpoint - x)))
-        )
-
-        # ensure bounds
-        out[col] = out[col].clip(likert_min, likert_max)
+    # Vectorized midpoint transformation
+    out = out + level * (midpoint - out)
+    out = out.round().clip(likert_min, likert_max)
 
     return out
 
 
 # --------------------------------------------------------------
-# 5. EXTREMITY BIAS (move values toward ends of scale)
+# 5. EXTREMITY BIAS (push values to nearest extreme)
 # --------------------------------------------------------------
 def apply_extremity_bias(df: pd.DataFrame, level: float, likert_min: int, likert_max: int) -> pd.DataFrame:
     if level <= 0:
-        return df
+        return df.copy()
 
-    out = df.copy()
+    out = df.copy().astype(float)
     midpoint = (likert_min + likert_max) / 2
 
-    def push_extreme(x):
-        if x >= midpoint:
-            target = likert_max
-        else:
-            target = likert_min
-        return int(round(x + level * (target - x)))
+    # Create masks
+    upper_mask = out >= midpoint
+    lower_mask = out < midpoint
 
-    for col in out.columns:
-        out[col] = out[col].apply(push_extreme).clip(likert_min, likert_max)
+    # Move values toward nearest extreme
+    out[upper_mask] = out[upper_mask] + level * (likert_max - out[upper_mask])
+    out[lower_mask] = out[lower_mask] + level * (likert_min - out[lower_mask])
+
+    out = out.round().clip(likert_min, likert_max)
 
     return out
 
 
 # --------------------------------------------------------------
-# 6. ACQUIESCENCE (shift values upward)
+# 6. ACQUIESCENCE (systematic upward/downward drift)
 # --------------------------------------------------------------
 def apply_acquiescence(df: pd.DataFrame, level: float, likert_min: int, likert_max: int) -> pd.DataFrame:
     if level == 0:
-        return df
+        return df.copy()
 
     out = df.copy()
 
-    shift = int(round(level * 1))  # small shift
-    out = out + shift
-    return out.clip(likert_min, likert_max)
+    # More realistic: level range [-1, 1] shifts values by up to ±1 point
+    shift_amount = np.clip(level, -1, 1)
+
+    out = out + shift_amount
+    out = out.round().clip(likert_min, likert_max)
+
+    return out
 
 
 # --------------------------------------------------------------
@@ -151,26 +153,25 @@ def apply_acquiescence(df: pd.DataFrame, level: float, likert_min: int, likert_m
 # --------------------------------------------------------------
 def apply_missingness(df: pd.DataFrame, rate: float) -> pd.DataFrame:
     if rate <= 0:
-        return df
+        return df.copy()
 
     out = df.copy()
     n, k = out.shape
-    rng = np.random.default_rng()
 
+    rng = np.random.default_rng()
     total = n * k
     n_nan = int(total * rate)
 
     rows = rng.integers(0, n, size=n_nan)
     cols = rng.integers(0, k, size=n_nan)
 
-    for r, c in zip(rows, cols):
-        out.iat[r, c] = np.nan
+    out.values[rows, cols] = np.nan
 
     return out
 
 
 # --------------------------------------------------------------
-# 8. MASTER FUNCTION — APPLY ALL BIASES
+# 8. MASTER PIPELINE — APPLY ALL BIASES
 # --------------------------------------------------------------
 def apply_all_biases(
     df: pd.DataFrame,
@@ -184,9 +185,12 @@ def apply_all_biases(
     acquiescence_level: float = 0.0,
     missing_rate: float = 0.0,
 ) -> pd.DataFrame:
-
+    """
+    Applies all response behaviours in a fixed, interpretable sequence.
+    """
     out = df.copy()
 
+    # Order matters
     out = apply_careless(out, careless_rate, likert_min, likert_max)
     out = apply_straightlining(out, straightlining_rate, likert_min, likert_max)
     out = apply_random_responding(out, random_response_rate, likert_min, likert_max)

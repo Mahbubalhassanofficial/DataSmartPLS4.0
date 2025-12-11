@@ -104,3 +104,44 @@ The tool can be used for:
 
 ## 📁 Repository Structure (planned)
 
+DataSmartPLS4.0/
+│
+├─ app/
+│ ├─ streamlit_app.py
+│ └─ pages/
+│
+├─ core/
+│ ├─ config.py
+│ ├─ measurement.py
+│ ├─ distributions.py
+│ ├─ demographics.py
+│ ├─ bias.py
+│ ├─ structural.py
+│ └─ generator.py
+│
+├─ examples/
+│ ├─ notebooks/
+│ └─ datasets/
+│
+├─ tests/
+│
+├─ README.md
+├─ LICENSE
+└─ requirements.txt
+
+Author
+Mahbub Hassan
+Founder — B’Deshi Emerging Research Lab
+Transportation Systems, Data Analytics, and Intelligent Mobility Researcher
+
+🤝 Contributing
+
+Contributions will be welcomed after v0.2.
+A contributing guide will be added shortly.
+
+⭐ Citation (to include in your papers)
+
+Hassan, M. (2025). DataSmartPLS4.0: A Synthetic Survey Data Generator for SmartPLS and Behavioral Research.
+B’Deshi Emerging Research Lab. GitHub Repository.
+https://github.com/
+<your-username>/DataSmartPLS4.0

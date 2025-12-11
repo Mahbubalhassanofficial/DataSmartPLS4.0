@@ -13,35 +13,34 @@ from core.config import (
 from core.generator import generate_dataset
 from app._branding import render_app_header, render_app_footer
 
+
 # ------------------------------------------------
-# BASIC PAGE CONFIG
+# PAGE CONFIG
 # ------------------------------------------------
 st.set_page_config(
     page_title="DataSmartPLS4.0 – Synthetic Survey Data Generator",
     layout="wide",
 )
 
-st.title("DataSmartPLS4.0 – Synthetic Survey Data Generator (Structural + Measurement)")
-
+# Unified branding header
+render_app_header("Home · Data Generator")
 
 st.markdown(
     """
-This interface now supports **full PLS-SEM simulation**, including:
+This interface supports **full PLS-SEM synthetic data generation**, including:
 
 - Reflective measurement model  
 - Structural model (unlimited relations, endogenous constructs, R² targets)  
 - Realistic Likert-scale indicators  
 - Optional demographics  
-- Latent-variable generation that respects your structural paths  
 
-Use **Structural Model** page first if you want structural relations.
-Then come here to generate the full dataset.
+Tip: configure your **Structural Model** page if you want relations, then generate data here.
 """
 )
 
 
 # ------------------------------------------------
-# SIDEBAR: GLOBAL SAMPLE SETTINGS
+# SIDEBAR SETTINGS
 # ------------------------------------------------
 st.sidebar.header("Global Settings")
 
@@ -70,16 +69,13 @@ if likert_max <= likert_min:
 
 
 # ------------------------------------------------
-# MAIN: CONSTRUCT CONFIGURATION
+# CONSTRUCT CONFIGURATION
 # ------------------------------------------------
 st.subheader("1. Define Measurement Constructs")
 
 st.markdown(
     """
 Each row defines **one reflective latent construct**.
-
-Later, these constructs may serve as predictors or outcomes
-in the **structural model** configured in the Structural Model page.
 """
 )
 
@@ -132,17 +128,12 @@ construct_df = st.data_editor(
 )
 
 # enforce types
-construct_df["name"] = construct_df["name"].astype(str).str.strip()
+construct_df["name"] = construct_df["name"].astype(str).strip()
 construct_df["n_items"] = pd.to_numeric(construct_df["n_items"], errors="coerce").fillna(0).astype(int)
 
 for col in [
-    "latent_mean",
-    "latent_sd",
-    "skew",
-    "kurtosis",
-    "target_loading_mean",
-    "target_loading_min",
-    "target_loading_max",
+    "latent_mean", "latent_sd", "skew", "kurtosis",
+    "target_loading_mean", "target_loading_min", "target_loading_max",
 ]:
     construct_df[col] = pd.to_numeric(construct_df[col], errors="coerce")
 
@@ -150,7 +141,7 @@ construct_df["distribution"] = construct_df["distribution"].astype(str)
 
 
 # ------------------------------------------------
-# LOAD STRUCTURAL MODEL FROM SESSION (if available)
+# LOAD STRUCTURAL MODEL (if exists)
 # ------------------------------------------------
 st.subheader("2. Structural Model Status")
 
@@ -159,7 +150,7 @@ structural_cfg = StructuralConfig(paths=[], r2_targets={})
 if "structural_config_raw" in st.session_state:
     raw = st.session_state["structural_config_raw"]
 
-    # Rebuild path configs
+    # rebuild path configs
     paths = []
     for p in raw.get("paths", []):
         try:
@@ -170,7 +161,7 @@ if "structural_config_raw" in st.session_state:
                     beta=float(p["beta"]),
                 )
             )
-        except Exception:
+        except:
             pass
 
     r2_dict = {
@@ -183,7 +174,7 @@ if "structural_config_raw" in st.session_state:
 
     st.success(
         f"Structural model detected: {len(paths)} paths · "
-        f"R² specified for {len(r2_dict)} constructs."
+        f"R² for {len(r2_dict)} constructs."
     )
     st.json(raw)
 else:
@@ -196,14 +187,17 @@ else:
 st.subheader("3. Generate Synthetic Survey Data")
 
 if st.button("Generate synthetic data", type="primary"):
+
     if likert_max <= likert_min:
         st.error("Fix Likert scale: maximum must be greater than minimum.")
-    elif construct_df["n_items"].sum() <= 0:
-        st.error("Please define at least one construct with n_items > 0.")
-    else:
-        with st.spinner("Generating dataset using full structural + measurement engine..."):
 
-            # Build construct configuration list
+    elif construct_df["n_items"].sum() <= 0:
+        st.error("Define at least one construct with items.")
+
+    else:
+        with st.spinner("Generating dataset using structural + measurement engine..."):
+
+            # Build construct list
             constructs = []
             for _, row in construct_df.iterrows():
                 if not row["name"] or row["n_items"] <= 0:
@@ -224,7 +218,6 @@ if st.button("Generate synthetic data", type="primary"):
                     )
                 )
 
-            # sample config
             sample_cfg = SampleConfig(
                 n_respondents=int(n_respondents),
                 likert_min=int(likert_min),
@@ -233,9 +226,8 @@ if st.button("Generate synthetic data", type="primary"):
             )
 
             demo_cfg = DemographicConfig(add_demographics=add_demographics)
-            bias_cfg = BiasConfig()  # will be used in later phases
+            bias_cfg = BiasConfig()
 
-            # full model config including structural model
             model_cfg = ModelConfig(
                 project_name=project_name,
                 researcher_name=researcher_name,
@@ -246,18 +238,15 @@ if st.button("Generate synthetic data", type="primary"):
                 structural=structural_cfg,
             )
 
-           # generate!
-full_df, items_df = generate_dataset(model_cfg)
+            # 🎯 generate dataset
+            full_df, items_df = generate_dataset(model_cfg)
 
-# Store results for Export Center  ⭐ VERY IMPORTANT ⭐
-st.session_state["last_full_df"] = full_df
-st.session_state["last_items_df"] = items_df
-st.session_state["last_model_cfg"] = model_cfg
+        # Save for ExportCenter
+        st.session_state["last_full_df"] = full_df
+        st.session_state["last_items_df"] = items_df
+        st.session_state["last_model_cfg"] = model_cfg
 
-st.success(
-    f"Generated dataset: {full_df.shape[0]} rows × {full_df.shape[1]} columns."
-)
-
+        st.success(f"Generated dataset: {full_df.shape[0]} rows × {full_df.shape[1]} columns.")
 
         st.markdown(f"**Project:** {project_name}  \n**Researcher:** {researcher_name}")
 
@@ -267,29 +256,11 @@ st.success(
         st.markdown("### Descriptive statistics (numeric columns)")
         st.dataframe(full_df.describe(), use_container_width=True)
 
-        csv_bytes = full_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="📥 Download full dataset (CSV)",
-            data=csv_bytes,
-            file_name="DataSmartPLS4_synthetic_data.csv",
-            mime="text/csv",
-        )
-
-        st.info(
-            "This dataset is fully synthetic and intended for **methodological research, teaching, and simulation** "
-            "(e.g., SmartPLS, SEM, fsQCA)."
-        )
 else:
-    st.caption("Adjust constructs and global settings, then click **Generate synthetic data**.")
+    st.caption("Adjust constructs and settings, then click **Generate synthetic data**.")
 
 
 # ------------------------------------------------
-# FOOTER / BRANDING
+# FOOTER
 # ------------------------------------------------
-st.markdown("---")
-st.markdown(
-    """
-**DataSmartPLS4.0** · B’Deshi Emerging Research Lab  
-Advanced synthetic survey generator for research design, teaching, and simulation.
-"""
-)
+render_app_footer()

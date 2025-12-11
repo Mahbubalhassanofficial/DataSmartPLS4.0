@@ -3,92 +3,102 @@ import pandas as pd
 import numpy as np
 
 from core.bias import apply_all_biases
+from app.branding import render_app_header, render_app_footer
 
 
+# ------------------------------------------------
+# PAGE CONFIG
+# ------------------------------------------------
 st.set_page_config(
     page_title="DataSmartPLS4.0 – Response Bias Simulation",
     layout="wide",
 )
 
+# Branding header
+render_app_header("Response Behaviour & Bias Simulation")
 
-st.title("Response Behaviour & Bias Simulation")
-
+# ------------------------------------------------
+# INTRO
+# ------------------------------------------------
 st.markdown(
     """
 This module applies **realistic response behaviours** to an existing dataset, including:
 
-- Careless responding (random noise in some cells)  
-- Straight-lining (same answer across all items for some respondents)  
-- Fully random responding for some respondents  
-- Midpoint bias (pulling responses toward the central category)  
-- Extremity bias (pushing responses toward the ends)  
-- Acquiescence (general tendency to agree / upward drift)  
-- Missingness (MCAR-style item non-response)  
+- **Careless responding:** random noise  
+- **Straight-lining:** same score across items  
+- **Random responding:** full random patterns  
+- **Midpoint bias:** pull toward center  
+- **Extremity bias:** push toward ends  
+- **Acquiescence bias:** tendency to agree  
+- **Missingness (MCAR):** random item-level missing data  
 
-You can:
-1. Upload a CSV file (e.g., generated from **DataSmartPLS4.0** or from your own survey).
-2. Select which columns are Likert-type items.
-3. Set bias levels.
-4. Apply all biases and download the modified dataset.
+### Workflow
+1. Upload dataset (CSV)  
+2. Select Likert-type columns  
+3. Configure bias settings  
+4. Apply biases → download modified dataset  
 """
 )
 
+
 # ------------------------------------------------
-# 1. DATA INPUT
+# 1. DATA UPLOAD
 # ------------------------------------------------
 st.subheader("1. Upload dataset")
 
 uploaded_file = st.file_uploader(
-    "Upload a CSV file (item-level data). Non-item columns can be excluded in the next step.",
+    "Upload a CSV file (item-level survey data).",
     type=["csv"],
 )
 
 if uploaded_file is None:
-    st.info("Please upload a CSV file to configure and apply bias.")
+    st.info("Please upload a CSV file to continue.")
+    render_app_footer()
     st.stop()
 
+# Load data
 try:
     df = pd.read_csv(uploaded_file)
 except Exception as e:
-    st.error(f"Could not read CSV file. Error: {e}")
+    st.error(f"Could not read the CSV file. Error: {e}")
+    render_app_footer()
     st.stop()
 
-st.success(f"Dataset loaded: {df.shape[0]} rows × {df.shape[1]} columns.")
-st.markdown("### Preview (first 10 rows)")
+st.success(f"Dataset loaded: **{df.shape[0]} rows × {df.shape[1]} columns**")
 st.dataframe(df.head(10), use_container_width=True)
 
 
 # ------------------------------------------------
-# 2. SELECT ITEM COLUMNS & LIKERT RANGE
+# 2. SELECT ITEM COLUMNS
 # ------------------------------------------------
 st.subheader("2. Select Likert-type item columns")
 
 numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
 
 if not numeric_cols:
-    st.error("No numeric columns detected. Likert items must be numeric.")
+    st.error("No numeric columns detected — Likert items must be numeric.")
+    render_app_footer()
     st.stop()
 
 selected_items = st.multiselect(
-    "Select columns that represent Likert-scale items:",
+    "Select Likert-scale item columns:",
     options=numeric_cols,
     default=numeric_cols,
 )
 
 if not selected_items:
-    st.error("Please select at least one Likert item column.")
+    st.error("Select at least one Likert item column.")
+    render_app_footer()
     st.stop()
 
 items_df = df[selected_items].copy()
 
-# Guess Likert range from data
+# Auto-detect Likert range
 data_min = int(np.nanmin(items_df.values))
 data_max = int(np.nanmax(items_df.values))
 
-st.markdown("#### Likert Scale Range")
-
-col1, col2 = st.columns(2)
-with col1:
+col_a, col_b = st.columns(2)
+with col_a:
     likert_min = st.number_input(
         "Likert minimum",
         min_value=1,
@@ -96,7 +106,7 @@ with col1:
         value=max(1, data_min),
         step=1,
     )
-with col2:
+with col_b:
     likert_max = st.number_input(
         "Likert maximum",
         min_value=2,
@@ -107,80 +117,62 @@ with col2:
 
 if likert_max <= likert_min:
     st.error("Likert maximum must be greater than minimum.")
+    render_app_footer()
     st.stop()
 
 
 # ------------------------------------------------
-# 3. SET BIAS LEVELS
+# 3. BIAS SETTINGS
 # ------------------------------------------------
-st.subheader("3. Configure response behaviours & bias levels")
+st.subheader("3. Configure response behaviours")
 
-st.markdown("All rates/levels are **proportions** between 0 and 1.")
+st.markdown("All values represent **proportions (0–1)** or **strength levels (0–1)**.")
 
-col_c1, col_c2 = st.columns(2)
+col1, col2 = st.columns(2)
 
-with col_c1:
+with col1:
     careless_rate = st.slider(
-        "Careless responding (fraction of individual cells randomized)",
-        min_value=0.0,
-        max_value=0.5,
-        value=0.0,
-        step=0.01,
+        "Careless responding (cell randomization rate)",
+        0.0, 0.5, 0.0, 0.01
     )
     straightlining_rate = st.slider(
-        "Straight-lining (fraction of respondents with same answer across all items)",
-        min_value=0.0,
-        max_value=0.5,
-        value=0.0,
-        step=0.01,
+        "Straight-lining (fraction of respondents)",
+        0.0, 0.5, 0.0, 0.01
     )
     random_response_rate = st.slider(
-        "Random responding (fraction of respondents answering randomly)",
-        min_value=0.0,
-        max_value=0.5,
-        value=0.0,
-        step=0.01,
+        "Random responding (fraction of respondents)",
+        0.0, 0.5, 0.0, 0.01
     )
 
-with col_c2:
+with col2:
     midpoint_bias_level = st.slider(
-        "Midpoint bias level (0 = none, 1 = strong pull to middle)",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.0,
-        step=0.05,
+        "Midpoint bias strength",
+        0.0, 1.0, 0.0, 0.05
     )
     extreme_bias_level = st.slider(
-        "Extremity bias level (0 = none, 1 = strong push to scale ends)",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.0,
-        step=0.05,
+        "Extremity bias strength",
+        0.0, 1.0, 0.0, 0.05
     )
     acquiescence_level = st.slider(
-        "Acquiescence (tendency to agree / shift upward; negative = downward)",
-        min_value=-1.0,
-        max_value=1.0,
-        value=0.0,
-        step=0.1,
+        "Acquiescence (positive = upwards shift, negative = downwards)",
+        -1.0, 1.0, 0.0, 0.1
     )
 
 missing_rate = st.slider(
-    "Missingness rate (MCAR; fraction of item cells set to NaN)",
-    min_value=0.0,
-    max_value=0.5,
-    value=0.0,
-    step=0.01,
+    "Missingness rate (MCAR)",
+    0.0, 0.5, 0.0, 0.01
 )
 
 
 # ------------------------------------------------
-# 4. APPLY BIAS
+# 4. APPLY BIASES
 # ------------------------------------------------
-st.subheader("4. Apply biases and generate biased dataset")
+st.subheader("4. Apply biases and generate modified dataset")
 
-if st.button("Apply selected biases to item data", type="primary"):
-    with st.spinner("Applying bias transformations..."):
+if st.button("Apply biases to the dataset", type="primary"):
+
+    with st.spinner("Applying response behaviour models..."):
+
         biased_items = apply_all_biases(
             df=items_df,
             likert_min=int(likert_min),
@@ -194,33 +186,39 @@ if st.button("Apply selected biases to item data", type="primary"):
             missing_rate=float(missing_rate),
         )
 
-        # merge back with non-item columns
         non_item_cols = [c for c in df.columns if c not in selected_items]
-        biased_df = pd.concat([df[non_item_cols].reset_index(drop=True),
-                               biased_items.reset_index(drop=True)], axis=1)
 
-    st.success("Bias applied. See preview below.")
+        biased_df = pd.concat(
+            [df[non_item_cols].reset_index(drop=True),
+             biased_items.reset_index(drop=True)],
+            axis=1
+        )
 
-    st.markdown("### Preview of biased dataset (first 10 rows)")
+    st.success("Bias transformation applied successfully.")
+
+    st.markdown("### Preview of Biased Dataset (Top 10 Rows)")
     st.dataframe(biased_df.head(10), use_container_width=True)
 
-    st.markdown("### Quick comparison of means (original vs biased items)")
-    orig_means = items_df.mean().rename("Original mean")
-    biased_means = biased_items.mean().rename("Biased mean")
-    compare_df = pd.concat([orig_means, biased_means], axis=1)
+    st.markdown("### Comparison of Means (Original vs Biased)")
+    compare_df = pd.concat(
+        [items_df.mean().rename("Original"), biased_items.mean().rename("Biased")],
+        axis=1
+    )
     st.dataframe(compare_df.T, use_container_width=True)
 
-    csv_bytes = biased_df.to_csv(index=False).encode("utf-8")
+    # Download button
     st.download_button(
-        label="📥 Download biased dataset as CSV",
-        data=csv_bytes,
+        "📥 Download Biased Dataset (CSV)",
+        biased_df.to_csv(index=False).encode("utf-8"),
         file_name="DataSmartPLS4_biased_dataset.csv",
         mime="text/csv",
     )
 
-    st.info(
-        "You can now feed this **biased synthetic dataset** into SmartPLS, SEM, or fsQCA "
-        "to study robustness, detection of bias, and effectiveness of diagnostics."
-    )
 else:
-    st.caption("Set the bias parameters and click **Apply selected biases to item data**.")
+    st.caption("Set behaviour parameters, then click **Apply biases**.")
+
+
+# ------------------------------------------------
+# FOOTER
+# ------------------------------------------------
+render_app_footer()

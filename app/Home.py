@@ -39,34 +39,46 @@ Tip: configure your **Structural Model** page if you want relations, then genera
 )
 
 
-# ------------------------------------------------
-# SIDEBAR SETTINGS
-# ------------------------------------------------
-st.sidebar.header("Global Settings")
+# ================================================================
+# SIDEBAR: GLOBAL SETTINGS
+# ================================================================
+with st.sidebar:
+    st.header("Global Settings")
 
-project_name = st.sidebar.text_input("Project name", value="Demo SmartPLS Study")
-researcher_name = st.sidebar.text_input("Researcher name", value="Prof. Mahbub")
+    project_name = st.text_input("Project name", value="Demo SmartPLS Study")
+    researcher_name = st.text_input("Researcher name", value="Prof. Mahbub")
 
-n_respondents = st.sidebar.number_input(
-    "Number of respondents (N)", min_value=30, max_value=200000, value=500, step=10
-)
+    n_respondents = st.number_input(
+        "Number of respondents (N)",
+        min_value=30,
+        max_value=200_000,
+        value=500,
+        step=10,
+    )
 
-likert_min = st.sidebar.number_input("Likert minimum", min_value=1, max_value=3, value=1)
-likert_max = st.sidebar.number_input("Likert maximum", min_value=3, max_value=10, value=5)
+    likert_min = st.number_input(
+        "Likert minimum", min_value=1, max_value=3, value=1, step=1
+    )
+    likert_max = st.number_input(
+        "Likert maximum", min_value=3, max_value=10, value=5, step=1
+    )
 
-random_seed = st.sidebar.number_input("Random seed", min_value=0, max_value=999999, value=123)
+    random_seed = st.number_input(
+        "Random seed", min_value=0, max_value=999_999, value=123, step=1
+    )
 
-add_demographics = st.sidebar.checkbox("Include synthetic demographics", value=True)
+    add_demographics = st.checkbox(
+        "Include synthetic demographics", value=True
+    )
 
-if likert_max <= likert_min:
-    st.sidebar.error("Likert maximum must be greater than minimum.")
+    if likert_max <= likert_min:
+        st.error("Likert maximum must be greater than minimum.")
 
 
-# ------------------------------------------------
-# CONSTRUCT CONFIGURATION
-# ------------------------------------------------
+# ================================================================
+# 1. CONSTRUCT CONFIGURATION
+# ================================================================
 st.subheader("1. Define Measurement Constructs")
-
 st.markdown("Each row defines **one reflective latent construct**.")
 
 default_constructs = pd.DataFrame(
@@ -117,22 +129,49 @@ construct_df = st.data_editor(
     key="construct_editor",
 )
 
-# enforce types
-construct_df["name"] = construct_df["name"].astype(str).str.strip()   # FIXED
-construct_df["n_items"] = pd.to_numeric(construct_df["n_items"], errors="coerce").fillna(0).astype(int)
+# ---- Clean & enforce types -------------------------------------
+# Strip names and drop fully empty rows
+construct_df["name"] = (
+    construct_df["name"]
+    .astype(str)
+    .str.strip()
+)
 
-for col in [
-    "latent_mean", "latent_sd", "skew", "kurtosis",
-    "target_loading_mean", "target_loading_min", "target_loading_max",
-]:
-    construct_df[col] = pd.to_numeric(construct_df[col], errors="coerce")
+# numeric columns
+numeric_cols_int = ["n_items"]
+numeric_cols_float = [
+    "latent_mean",
+    "latent_sd",
+    "skew",
+    "kurtosis",
+    "target_loading_mean",
+    "target_loading_min",
+    "target_loading_max",
+]
 
-construct_df["distribution"] = construct_df["distribution"].astype(str)
+for col in numeric_cols_int:
+    construct_df[col] = pd.to_numeric(
+        construct_df[col], errors="coerce"
+    ).fillna(0).astype(int)
+
+for col in numeric_cols_float:
+    construct_df[col] = pd.to_numeric(
+        construct_df[col], errors="coerce"
+    )
+
+construct_df["distribution"] = (
+    construct_df["distribution"].astype(str).str.lower().replace({"": "normal"})
+)
+
+# Drop constructs with no name or no items
+construct_df = construct_df[
+    (construct_df["name"] != "") & (construct_df["n_items"] > 0)
+].reset_index(drop=True)
 
 
-# ------------------------------------------------
-# LOAD STRUCTURAL MODEL (if exists)
-# ------------------------------------------------
+# ================================================================
+# 2. STRUCTURAL MODEL STATUS
+# ================================================================
 st.subheader("2. Structural Model Status")
 
 structural_cfg = StructuralConfig(paths=[], r2_targets={})
@@ -140,58 +179,86 @@ structural_cfg = StructuralConfig(paths=[], r2_targets={})
 if "structural_config_raw" in st.session_state:
     raw = st.session_state["structural_config_raw"]
 
-    # rebuild path configs
+    # rebuild path configs safely
     paths = []
     for p in raw.get("paths", []):
         try:
-            paths.append(PathConfig(source=str(p["source"]), target=str(p["target"]), beta=float(p["beta"])))
-        except:
-            pass
+            src = str(p.get("source", "")).strip()
+            tgt = str(p.get("target", "")).strip()
+            beta_val = float(p.get("beta", 0.0))
+            if src and tgt:
+                paths.append(PathConfig(source=src, target=tgt, beta=beta_val))
+        except Exception:
+            # silently skip problematic rows
+            continue
 
-    r2_dict = {k: float(v) for k, v in raw.get("r2_targets", {}).items() if v is not None and v > 0}
+    r2_dict = {}
+    for k, v in raw.get("r2_targets", {}).items():
+        try:
+            val = float(v)
+            if val > 0:
+                r2_dict[str(k)] = val
+        except Exception:
+            continue
 
     structural_cfg = StructuralConfig(paths=paths, r2_targets=r2_dict)
 
-    st.success(f"Structural model detected: {len(paths)} paths · R² for {len(r2_dict)} constructs.")
+    st.success(
+        f"Structural model detected: {len(paths)} paths · "
+        f"R² for {len(r2_dict)} constructs."
+    )
     st.json(raw)
 else:
-    st.info("No structural model found. Data will be generated without structural relations.")
+    st.info(
+        "No structural model found. "
+        "Data will be generated without structural relations."
+    )
 
 
-# ------------------------------------------------
-# GENERATE DATA
-# ------------------------------------------------
+# ================================================================
+# 3. GENERATE DATA
+# ================================================================
 st.subheader("3. Generate Synthetic Survey Data")
 
-if st.button("Generate synthetic data", type="primary"):
+generate_clicked = st.button("Generate synthetic data", type="primary")
 
+if generate_clicked:
+
+    # Basic checks
     if likert_max <= likert_min:
         st.error("Fix Likert scale: maximum must be greater than minimum.")
 
-    elif construct_df["n_items"].sum() <= 0:
-        st.error("Define at least one construct with items.")
+    elif construct_df.empty or construct_df["n_items"].sum() <= 0:
+        st.error("Define at least one construct with at least one item.")
 
     else:
-        with st.spinner("Generating dataset using structural + measurement engine..."):
-
-            # Build construct list
+        with st.spinner(
+            "Generating dataset using structural + measurement engine..."
+        ):
+            # Build construct list for ModelConfig
             constructs = []
             for _, row in construct_df.iterrows():
-                if not row["name"] or row["n_items"] <= 0:
-                    continue
+                # Safe defaults for any missing numeric fields
+                latent_mean = float(row["latent_mean"]) if pd.notna(row["latent_mean"]) else 0.0
+                latent_sd = float(row["latent_sd"]) if pd.notna(row["latent_sd"]) else 1.0
+                skew = float(row["skew"]) if pd.notna(row["skew"]) else 0.0
+                kurt = float(row["kurtosis"]) if pd.notna(row["kurtosis"]) else 3.0
+                t_mean = float(row["target_loading_mean"]) if pd.notna(row["target_loading_mean"]) else 0.75
+                t_min = float(row["target_loading_min"]) if pd.notna(row["target_loading_min"]) else 0.60
+                t_max = float(row["target_loading_max"]) if pd.notna(row["target_loading_max"]) else 0.90
 
                 constructs.append(
                     ConstructConfig(
                         name=row["name"],
                         n_items=int(row["n_items"]),
-                        latent_mean=float(row["latent_mean"]),
-                        latent_sd=float(row["latent_sd"]),
+                        latent_mean=latent_mean,
+                        latent_sd=latent_sd,
                         distribution=row["distribution"],
-                        skew=float(row["skew"]),
-                        kurtosis=float(row["kurtosis"]),
-                        target_loading_mean=float(row["target_loading_mean"]),
-                        target_loading_min=float(row["target_loading_min"]),
-                        target_loading_max=float(row["target_loading_max"]),
+                        skew=skew,
+                        kurtosis=kurt,
+                        target_loading_mean=t_mean,
+                        target_loading_min=t_min,
+                        target_loading_max=t_max,
                     )
                 )
 
@@ -215,16 +282,22 @@ if st.button("Generate synthetic data", type="primary"):
                 structural=structural_cfg,
             )
 
+            # Core engine
             full_df, items_df = generate_dataset(model_cfg)
 
-        # Save for ExportCenter
+        # Store in session state for other pages (e.g., ExportCenter)
         st.session_state["last_full_df"] = full_df
         st.session_state["last_items_df"] = items_df
         st.session_state["last_model_cfg"] = model_cfg
 
-        st.success(f"Generated dataset: {full_df.shape[0]} rows × {full_df.shape[1]} columns.")
+        st.success(
+            f"Generated dataset: {full_df.shape[0]} rows × {full_df.shape[1]} columns."
+        )
 
-        st.markdown(f"**Project:** {project_name}  \n**Researcher:** {researcher_name}")
+        st.markdown(
+            f"**Project:** {project_name}  \n"
+            f"**Researcher:** {researcher_name}"
+        )
 
         st.markdown("### Preview (first 10 rows)")
         st.dataframe(full_df.head(10), use_container_width=True)
@@ -233,7 +306,9 @@ if st.button("Generate synthetic data", type="primary"):
         st.dataframe(full_df.describe(), use_container_width=True)
 
 else:
-    st.caption("Adjust constructs and settings, then click **Generate synthetic data**.")
+    st.caption(
+        "Adjust constructs and settings, then click **Generate synthetic data**."
+    )
 
 
 # ------------------------------------------------

@@ -12,7 +12,6 @@ from core.config import (
 )
 from core.generator import generate_dataset
 
-
 # ------------------------------------------------
 # BASIC PAGE CONFIG
 # ------------------------------------------------
@@ -246,12 +245,18 @@ if st.button("Generate synthetic data", type="primary"):
                 structural=structural_cfg,
             )
 
-            # generate!
-            full_df, items_df = generate_dataset(model_cfg)
+           # generate!
+full_df, items_df = generate_dataset(model_cfg)
 
-        st.success(
-            f"Generated dataset: {full_df.shape[0]} rows × {full_df.shape[1]} columns."
-        )
+# Store results for Export Center  ⭐ VERY IMPORTANT ⭐
+st.session_state["last_full_df"] = full_df
+st.session_state["last_items_df"] = items_df
+st.session_state["last_model_cfg"] = model_cfg
+
+st.success(
+    f"Generated dataset: {full_df.shape[0]} rows × {full_df.shape[1]} columns."
+)
+
 
         st.markdown(f"**Project:** {project_name}  \n**Researcher:** {researcher_name}")
 

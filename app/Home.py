@@ -7,6 +7,8 @@ from core.config import (
     SampleConfig,
     DemographicConfig,
     BiasConfig,
+    StructuralConfig,
+    PathConfig,
 )
 from core.generator import generate_dataset
 
@@ -19,23 +21,24 @@ st.set_page_config(
     layout="wide",
 )
 
-st.title("DataSmartPLS4.0 – Synthetic Survey Data Generator (Foundation UI)")
+st.title("DataSmartPLS4.0 – Synthetic Survey Data Generator (Structural + Measurement)")
+
 
 st.markdown(
     """
-This interface uses the **core latent-variable engine** of DataSmartPLS4.0 to generate
-realistic Likert-scale survey data based on reflective constructs.
+This interface now supports **full PLS-SEM simulation**, including:
 
-We will later add:
-- response biases,
-- structural models,
-- diagnostics,
-- multi-group simulation,
-- and advanced export options.
+- Reflective measurement model  
+- Structural model (unlimited relations, endogenous constructs, R² targets)  
+- Realistic Likert-scale indicators  
+- Optional demographics  
+- Latent-variable generation that respects your structural paths  
 
-For now, this page focuses on **measurement model data generation**.
+Use **Structural Model** page first if you want structural relations.
+Then come here to generate the full dataset.
 """
 )
+
 
 # ------------------------------------------------
 # SIDEBAR: GLOBAL SAMPLE SETTINGS
@@ -73,15 +76,10 @@ st.subheader("1. Define Measurement Constructs")
 
 st.markdown(
     """
-Each row below corresponds to **one latent construct**.
+Each row defines **one reflective latent construct**.
 
-You can configure:
-- number of items (indicators),
-- latent mean and standard deviation,
-- distribution shape,
-- average loading and its range.
-
-Later we will link these constructs with a structural model (paths, mediation, moderation).
+Later, these constructs may serve as predictors or outcomes
+in the **structural model** configured in the Structural Model page.
 """
 )
 
@@ -152,9 +150,50 @@ construct_df["distribution"] = construct_df["distribution"].astype(str)
 
 
 # ------------------------------------------------
+# LOAD STRUCTURAL MODEL FROM SESSION (if available)
+# ------------------------------------------------
+st.subheader("2. Structural Model Status")
+
+structural_cfg = StructuralConfig(paths=[], r2_targets={})
+
+if "structural_config_raw" in st.session_state:
+    raw = st.session_state["structural_config_raw"]
+
+    # Rebuild path configs
+    paths = []
+    for p in raw.get("paths", []):
+        try:
+            paths.append(
+                PathConfig(
+                    source=str(p["source"]),
+                    target=str(p["target"]),
+                    beta=float(p["beta"]),
+                )
+            )
+        except Exception:
+            pass
+
+    r2_dict = {
+        k: float(v)
+        for k, v in raw.get("r2_targets", {}).items()
+        if v is not None and v > 0
+    }
+
+    structural_cfg = StructuralConfig(paths=paths, r2_targets=r2_dict)
+
+    st.success(
+        f"Structural model detected: {len(paths)} paths · "
+        f"R² specified for {len(r2_dict)} constructs."
+    )
+    st.json(raw)
+else:
+    st.info("No structural model found. Data will be generated without structural relations.")
+
+
+# ------------------------------------------------
 # GENERATE DATA
 # ------------------------------------------------
-st.subheader("2. Generate Synthetic Survey Data")
+st.subheader("3. Generate Synthetic Survey Data")
 
 if st.button("Generate synthetic data", type="primary"):
     if likert_max <= likert_min:
@@ -162,8 +201,9 @@ if st.button("Generate synthetic data", type="primary"):
     elif construct_df["n_items"].sum() <= 0:
         st.error("Please define at least one construct with n_items > 0.")
     else:
-        with st.spinner("Generating dataset using latent-variable model..."):
-            # Build construct configuration objects
+        with st.spinner("Generating dataset using full structural + measurement engine..."):
+
+            # Build construct configuration list
             constructs = []
             for _, row in construct_df.iterrows():
                 if not row["name"] or row["n_items"] <= 0:
@@ -184,6 +224,7 @@ if st.button("Generate synthetic data", type="primary"):
                     )
                 )
 
+            # sample config
             sample_cfg = SampleConfig(
                 n_respondents=int(n_respondents),
                 likert_min=int(likert_min),
@@ -192,8 +233,9 @@ if st.button("Generate synthetic data", type="primary"):
             )
 
             demo_cfg = DemographicConfig(add_demographics=add_demographics)
-            bias_cfg = BiasConfig()  # not applied yet; will be used in later steps
+            bias_cfg = BiasConfig()  # will be used in later phases
 
+            # full model config including structural model
             model_cfg = ModelConfig(
                 project_name=project_name,
                 researcher_name=researcher_name,
@@ -201,12 +243,14 @@ if st.button("Generate synthetic data", type="primary"):
                 sample=sample_cfg,
                 demographics=demo_cfg,
                 bias=bias_cfg,
+                structural=structural_cfg,
             )
 
+            # generate!
             full_df, items_df = generate_dataset(model_cfg)
 
         st.success(
-            f"Generated dataset with shape: {full_df.shape[0]} rows × {full_df.shape[1]} columns."
+            f"Generated dataset: {full_df.shape[0]} rows × {full_df.shape[1]} columns."
         )
 
         st.markdown(f"**Project:** {project_name}  \n**Researcher:** {researcher_name}")
@@ -226,8 +270,8 @@ if st.button("Generate synthetic data", type="primary"):
         )
 
         st.info(
-            "This dataset is fully synthetic and intended for **methodological testing, teaching, and pipeline validation** "
-            "(e.g., SmartPLS, SEM, fsQCA). Real empirical conclusions must always be based on real data."
+            "This dataset is fully synthetic and intended for **methodological research, teaching, and simulation** "
+            "(e.g., SmartPLS, SEM, fsQCA)."
         )
 else:
     st.caption("Adjust constructs and global settings, then click **Generate synthetic data**.")
@@ -240,6 +284,6 @@ st.markdown("---")
 st.markdown(
     """
 **DataSmartPLS4.0** · B’Deshi Emerging Research Lab  
-Synthetic survey data generator for research design, education, and methodological simulation.
+Advanced synthetic survey generator for research design, teaching, and simulation.
 """
 )

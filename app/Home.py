@@ -11,6 +11,7 @@ from core.config import (
     PathConfig,
 )
 from core.generator import generate_dataset
+from app._branding import render_app_header, render_app_footer
 
 # ------------------------------------------------
 # BASIC PAGE CONFIG

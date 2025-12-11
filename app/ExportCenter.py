@@ -18,228 +18,209 @@ from utils.export import (
 from app.branding import render_app_header, render_app_footer
 
 
-# --------------------------------------------------------
-# PAGE CONFIG
-# --------------------------------------------------------
-st.set_page_config(
-    page_title="DataSmartPLS4.0 – Export & Codebook Center",
-    layout="wide",
-)
+# ============================================================
+# PAGE FUNCTION – REQUIRED for navigation system
+# ============================================================
+def run():
 
-# Header with branding
-render_app_header("Export & Codebook Center")
+    # ---------- HEADER ----------
+    render_app_header("Export & Codebook Center")
 
+    st.markdown(
+        """
+        Export your generated dataset and metadata in **research-ready formats**:
 
-st.markdown(
-    """
-Use this center to export your synthetic dataset and metadata in multiple
-research-ready formats:
+        ### **Available Outputs**
+        - SmartPLS-ready Excel (items only)  
+        - Full dataset (CSV / Excel)  
+        - SPSS (.sav), Stata (.dta), R (.rds)  
+        - Codebook (CSV, PDF, HTML)  
+        - Metadata JSON  
 
-### Available Outputs
-- **SmartPLS-ready Excel (items only)**
-- **Full dataset CSV / Excel**
-- **SPSS (.sav), Stata (.dta), R (.rds)**
-- **Codebook (CSV, PDF, HTML)**
-- **Full metadata JSON**
+        ⚠️ Generate data first from the **Home** page.
+        """
+    )
 
-⚠️ Data must first be generated from the **Home page**.
-"""
-)
+    # ============================================================
+    # 1. FETCH LAST GENERATED DATA
+    # ============================================================
+    full_df = st.session_state.get("last_full_df")
+    items_df = st.session_state.get("last_items_df")
+    model_cfg = st.session_state.get("last_model_cfg")
 
+    if full_df is None or items_df is None or model_cfg is None:
+        st.error("No dataset found. Please generate data on the **Home** page first.")
+        render_app_footer()
+        return
 
-# --------------------------------------------------------
-# 1. Retrieve generated data from session_state
-# --------------------------------------------------------
-full_df = st.session_state.get("last_full_df")
-items_df = st.session_state.get("last_items_df")
-model_cfg = st.session_state.get("last_model_cfg")
+    # ============================================================
+    # 2. SUMMARY & PREVIEW
+    # ============================================================
+    st.subheader("1. Dataset Summary")
 
-if full_df is None or items_df is None or model_cfg is None:
-    st.error("No dataset available. Please generate data on the **Home** page first.")
-    render_app_footer()
-    st.stop()
+    st.write(
+        f"""
+        • **Rows (respondents):** {full_df.shape[0]}  
+        • **Columns (full dataset):** {full_df.shape[1]}  
+        • **Indicator items:** {items_df.shape[1]}  
+        """
+    )
 
-# --------------------------------------------------------
-# 2. Dataset Summary & Preview
-# --------------------------------------------------------
-st.subheader("1. Dataset Summary")
+    st.markdown("### Preview (first 10 rows)")
+    st.dataframe(full_df.head(10), use_container_width=True)
 
-st.write(
-    f"""
-- **Rows (respondents):** {full_df.shape[0]}  
-- **Columns (full dataset):** {full_df.shape[1]}  
-- **Indicators (items_df):** {items_df.shape[1]}  
-"""
-)
+    # ============================================================
+    # 3. CODEBOOK GENERATION
+    # ============================================================
+    st.subheader("2. Codebook & Metadata")
 
-st.markdown("### Preview (first 10 rows)")
-st.dataframe(full_df.head(10), use_container_width=True)
+    codebook_df = generate_codebook(model_cfg, items_df, full_df)
 
+    st.markdown("### Codebook Preview (first 20 rows)")
+    st.dataframe(codebook_df.head(20), use_container_width=True)
 
-# --------------------------------------------------------
-# 3. Generate Codebook
-# --------------------------------------------------------
-st.subheader("2. Codebook & Model Metadata")
+    # Prepare exports
+    csv_bytes = export_csv(full_df)
+    excel_full_bytes = export_excel_full(full_df)
+    excel_spls_bytes = export_excel_smartpls(items_df)
+    codebook_csv_bytes = codebook_df.to_csv(index=False).encode("utf-8")
+    codebook_html_bytes = export_codebook_html(codebook_df)
+    metadata_bytes = export_metadata_json(model_cfg, codebook_df)
 
-codebook_df = generate_codebook(model_cfg, items_df, full_df)
-
-st.markdown("### Codebook Preview (first 20 rows)")
-st.dataframe(codebook_df.head(20), use_container_width=True)
-
-
-# --------------------------------------------------------
-# Prepare export bytes
-# --------------------------------------------------------
-csv_bytes = export_csv(full_df)
-excel_full_bytes = export_excel_full(full_df)
-excel_spls_bytes = export_excel_smartpls(items_df)
-codebook_csv_bytes = codebook_df.to_csv(index=False).encode("utf-8")
-codebook_html_bytes = export_codebook_html(codebook_df)
-metadata_bytes = export_metadata_json(model_cfg, codebook_df)
-
-# PDF (optional)
-pdf_ok = False
-if pdf_available:
-    try:
-        pdf_bytes = export_codebook_pdf(codebook_df)
-        pdf_ok = True
-    except Exception as e:
-        st.warning(f"PDF export failed: {e}")
-else:
+    # PDF export (optional)
     pdf_ok = False
+    if pdf_available:
+        try:
+            pdf_bytes = export_codebook_pdf(codebook_df)
+            pdf_ok = True
+        except Exception as e:
+            st.warning(f"PDF export unavailable: {e}")
 
-# SPSS / Stata / R optional formats
-try:
-    spss_bytes = export_spss(full_df)
-    spss_ok = True
-except:
-    spss_ok = False
+    # SPSS/STATA/R
+    try:
+        spss_bytes = export_spss(full_df)
+        spss_ok = True
+    except:
+        spss_ok = False
 
-try:
-    stata_bytes = export_stata(full_df)
-    stata_ok = True
-except:
-    stata_ok = False
+    try:
+        stata_bytes = export_stata(full_df)
+        stata_ok = True
+    except:
+        stata_ok = False
 
-try:
-    rds_bytes = export_rds(full_df)
-    rds_ok = True
-except:
-    rds_ok = False
+    try:
+        rds_bytes = export_rds(full_df)
+        rds_ok = True
+    except:
+        rds_ok = False
 
+    # ============================================================
+    # 4. DOWNLOAD CENTER
+    # ============================================================
+    st.subheader("3. Download Files")
 
-# --------------------------------------------------------
-# 4. Download Buttons
-# --------------------------------------------------------
-st.subheader("3. Download Files")
+    colA, colB, colC = st.columns(3)
 
-colA, colB, colC = st.columns(3)
+    # -----------------------------
+    # Column A — General formats
+    # -----------------------------
+    with colA:
+        st.markdown("### General Formats")
 
-
-# -------------------------------
-# Column A – General Formats
-# -------------------------------
-with colA:
-    st.markdown("### General Formats")
-
-    st.download_button(
-        "📄 CSV (Full Dataset)",
-        data=csv_bytes,
-        file_name="DataSmartPLS4_full_dataset.csv",
-        mime="text/csv",
-    )
-
-    st.download_button(
-        "📊 Excel (Full Dataset)",
-        data=excel_full_bytes,
-        file_name="DataSmartPLS4_full_dataset.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-
-# -------------------------------
-# Column B – SmartPLS + Codebooks
-# -------------------------------
-with colB:
-    st.markdown("### SmartPLS + Codebooks")
-
-    st.download_button(
-        "📊 SmartPLS Excel (Items Only)",
-        data=excel_spls_bytes,
-        file_name="DataSmartPLS4_items_only_SmartPLS.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-    st.download_button(
-        "📘 Codebook (CSV)",
-        data=codebook_csv_bytes,
-        file_name="DataSmartPLS4_codebook.csv",
-        mime="text/csv",
-    )
-
-    st.download_button(
-        "🌐 Codebook (HTML)",
-        data=codebook_html_bytes,
-        file_name="DataSmartPLS4_codebook.html",
-        mime="text/html",
-    )
-
-    if pdf_ok:
         st.download_button(
-            "📕 Codebook (PDF)",
-            data=pdf_bytes,
-            file_name="DataSmartPLS4_codebook.pdf",
-            mime="application/pdf",
+            "📄 CSV (Full Dataset)",
+            data=csv_bytes,
+            file_name="DataSmartPLS4_full_dataset.csv",
+            mime="text/csv",
         )
-    else:
-        st.caption("PDF unavailable – install **reportlab** to enable this feature.")
 
-    st.download_button(
-        "🧩 Metadata JSON",
-        data=metadata_bytes,
-        file_name="DataSmartPLS4_metadata.json",
-        mime="application/json",
-    )
-
-
-# -------------------------------
-# Column C – SPSS / Stata / R
-# -------------------------------
-with colC:
-    st.markdown("### Statistical Software")
-
-    if spss_ok:
         st.download_button(
-            "📁 SPSS (.sav)",
-            data=spss_bytes,
-            file_name="DataSmartPLS4.sav",
-            mime="application/octet-stream",
+            "📊 Excel (Full Dataset)",
+            data=excel_full_bytes,
+            file_name="DataSmartPLS4_full_dataset.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-    else:
-        st.caption("SPSS export unavailable (pyreadstat not installed).")
 
-    if stata_ok:
+    # -----------------------------
+    # Column B — SmartPLS + Codebooks
+    # -----------------------------
+    with colB:
+        st.markdown("### SmartPLS & Codebook")
+
         st.download_button(
-            "📁 Stata (.dta)",
-            data=stata_bytes,
-            file_name="DataSmartPLS4.dta",
-            mime="application/octet-stream",
+            "📊 SmartPLS Excel (Items Only)",
+            data=excel_spls_bytes,
+            file_name="DataSmartPLS4_items_only_SmartPLS.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-    else:
-        st.caption("Stata export unavailable (pyreadstat not installed).")
 
-    if rds_ok:
         st.download_button(
-            "📁 R (.rds)",
-            data=rds_bytes,
-            file_name="DataSmartPLS4.rds",
-            mime="application/octet-stream",
+            "📘 Codebook (CSV)",
+            data=codebook_csv_bytes,
+            file_name="DataSmartPLS4_codebook.csv",
+            mime="text/csv",
         )
-    else:
-        st.caption("R export unavailable (pyreadr not installed).")
 
+        st.download_button(
+            "🌐 Codebook (HTML)",
+            data=codebook_html_bytes,
+            file_name="DataSmartPLS4_codebook.html",
+            mime="text/html",
+        )
 
-# --------------------------------------------------------
-# FOOTER
-# --------------------------------------------------------
-render_app_footer()
+        if pdf_ok:
+            st.download_button(
+                "📕 Codebook (PDF)",
+                data=pdf_bytes,
+                file_name="DataSmartPLS4_codebook.pdf",
+                mime="application/pdf",
+            )
+        else:
+            st.caption("PDF export unavailable (install `reportlab` to enable).")
+
+        st.download_button(
+            "🧩 Metadata (JSON)",
+            data=metadata_bytes,
+            file_name="DataSmartPLS4_metadata.json",
+            mime="application/json",
+        )
+
+    # -----------------------------
+    # Column C — Statistical packages
+    # -----------------------------
+    with colC:
+        st.markdown("### Statistical Software")
+
+        if spss_ok:
+            st.download_button(
+                "📁 SPSS (.sav)",
+                data=spss_bytes,
+                file_name="DataSmartPLS4.sav",
+                mime="application/octet-stream",
+            )
+        else:
+            st.caption("SPSS export unavailable (install `pyreadstat`).")
+
+        if stata_ok:
+            st.download_button(
+                "📁 Stata (.dta)",
+                data=stata_bytes,
+                file_name="DataSmartPLS4.dta",
+                mime="application/octet-stream",
+            )
+        else:
+            st.caption("Stata export unavailable (install `pyreadstat`).")
+
+        if rds_ok:
+            st.download_button(
+                "📁 R (.rds)",
+                data=rds_bytes,
+                file_name="DataSmartPLS4.rds",
+                mime="application/octet-stream",
+            )
+        else:
+            st.caption("R export unavailable (install `pyreadr`).")
+
+    # ---------- FOOTER ----------
+    render_app_footer()

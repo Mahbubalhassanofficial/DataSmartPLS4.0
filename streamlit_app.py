@@ -65,4 +65,3 @@ elif PAGE == "Diagnostics":
     diagnostics()
 elif PAGE == "Export Center":
     export_center()
-

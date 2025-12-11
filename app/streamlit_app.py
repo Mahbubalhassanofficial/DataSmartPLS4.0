@@ -5,6 +5,6 @@ st.set_page_config(
     layout="wide",
 )
 
-st.write("# Welcome to DataSmartPLS4.0")
+st.title("Welcome to DataSmartPLS4.0")
 
-st.info("Use the sidebar to navigate between pages.")
+st.info("Use the sidebar to navigate through the synthetic data generator tools.")

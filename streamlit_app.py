@@ -9,22 +9,21 @@ st.set_page_config(
 )
 
 # ============================================================
-#  GLOBAL SESSION INITIALIZATION FIX
+#  SAFE SESSION STATE INITIALIZATION
 # ============================================================
-# Prevents structural model & generated data from being lost on page switch
-
+# Streamlit Cloud sometimes resets session_state on reload.
+# These lines ensure your structural model is always persistent.
 if "structural_config_raw" not in st.session_state:
-    st.session_state["structural_config_raw"] = {
-        "paths": [],
-        "r2_targets": {}
-    }
+    st.session_state["structural_config_raw"] = {"paths": [], "r2_targets": {}}
 
+if "structural_config" not in st.session_state:
+    st.session_state["structural_config"] = None
+
+# Reserve dataset for ExportCenter
 if "last_full_df" not in st.session_state:
     st.session_state["last_full_df"] = None
-
 if "last_items_df" not in st.session_state:
     st.session_state["last_items_df"] = None
-
 if "last_model_cfg" not in st.session_state:
     st.session_state["last_model_cfg"] = None
 
@@ -32,8 +31,6 @@ if "last_model_cfg" not in st.session_state:
 # ============================================================
 #  IMPORT PAGE MODULES
 # ============================================================
-# All pages MUST have a run() function
-
 from app.Home import run as home
 from app.StructuralModel import run as structural
 from app.MeasurementModel import run as measurement
@@ -45,7 +42,6 @@ from app.ExportCenter import run as export_center
 # ============================================================
 #  SIDEBAR NAVIGATION
 # ============================================================
-
 st.sidebar.markdown(
     """
     <div style="font-size:1.2rem; font-weight:700; color:#7b2cbf;">
@@ -66,23 +62,27 @@ PAGE = st.sidebar.selectbox(
         "Measurement Model",
         "Bias Simulation",
         "Diagnostics",
-        "Export Center"
+        "Export Center",
     ]
 )
 
 # ============================================================
 #  PAGE ROUTER
 # ============================================================
-
 if PAGE == "Home":
     home()
+
 elif PAGE == "Structural Model":
     structural()
+
 elif PAGE == "Measurement Model":
     measurement()
+
 elif PAGE == "Bias Simulation":
     bias()
+
 elif PAGE == "Diagnostics":
     diagnostics()
+
 elif PAGE == "Export Center":
     export_center()

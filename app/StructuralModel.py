@@ -16,7 +16,6 @@ st.set_page_config(
 # Branding header
 render_app_header("Structural Model Configuration (PLS-SEM Style)")
 
-
 st.markdown(
     """
 Configure your **structural model** for synthetic PLS-SEM simulation:
@@ -26,20 +25,23 @@ Configure your **structural model** for synthetic PLS-SEM simulation:
 - Multiple endogenous constructs allowed  
 - Optional R² targets for finer control  
 
-When saved, this configuration will be used on the **Home** page to generate latent variables consistent with your structural design.
+When saved, this configuration will be used on the **Home** page to generate
+latent variables consistent with your structural design.
 """
 )
 
 # ---------------------------------------------------------
-# 1. Load constructs from Home page
+# 1. LOAD CONSTRUCTS FROM HOME PAGE
 # ---------------------------------------------------------
-st.subheader("1. Available constructs")
+st.subheader("1. Available Constructs")
 
 construct_names = []
 
 if "construct_editor" in st.session_state:
     try:
         df_constructs = st.session_state["construct_editor"]
+        # Sometimes data_editor returns a DataFrame directly,
+        # sometimes a structure; this assumes DataFrame as used in Home.
         if isinstance(df_constructs, pd.DataFrame) and "name" in df_constructs.columns:
             construct_names = (
                 df_constructs["name"]
@@ -61,16 +63,18 @@ if construct_names:
     )
 else:
     st.warning(
-        "No constructs detected. Enter them manually below."
+        "No constructs detected from the Home page. "
+        "You can manually specify constructs below."
     )
     manual = st.text_input(
         "Enter constructs (comma-separated), e.g., PE, EE, SI, BI",
-        value=""
+        value="",
     )
     if manual.strip():
         construct_names = [c.strip() for c in manual.split(",") if c.strip()]
 
 if not construct_names:
+    st.info("Define constructs on the Home page or manually above to continue.")
     render_app_footer()
     st.stop()
 
@@ -78,23 +82,19 @@ if not construct_names:
 # ---------------------------------------------------------
 # 2. STRUCTURAL PATHS TABLE
 # ---------------------------------------------------------
-st.subheader("2. Structural paths (β relations)")
+st.subheader("2. Structural Paths (β Relations)")
 
 st.markdown(
     """
-Each row defines a PLS-SEM structural equation:  
+Each row defines a PLS-SEM structural relation:  
 **source → target** with coefficient **β**.
 """
 )
 
-# Initialize paths DF
+# Initialize paths DF in session_state if missing
 if "structural_paths_df" not in st.session_state:
     st.session_state["structural_paths_df"] = pd.DataFrame(
-        {
-            "source": [],
-            "target": [],
-            "beta": []
-        }
+        {"source": [], "target": [], "beta": []}
     )
 
 paths_df = st.session_state["structural_paths_df"]
@@ -118,14 +118,15 @@ edited_df = st.data_editor(
     },
 )
 
+# Persist edited table
 st.session_state["structural_paths_df"] = edited_df
 
 st.markdown("---")
 
 # ---------------------------------------------------------
-# 2A. Quick add path helper
+# 2A. QUICK-ADD PATH HELPER
 # ---------------------------------------------------------
-st.markdown("#### Quick add structural path")
+st.markdown("#### Quick Add Structural Path")
 
 col1, col2, col3, col4 = st.columns([2, 2, 1.5, 1])
 
@@ -137,8 +138,12 @@ with col2:
 
 with col3:
     new_beta = st.number_input(
-        "β coefficient", min_value=-3.0, max_value=3.0,
-        value=0.30, step=0.05, key="new_beta"
+        "β coefficient",
+        min_value=-3.0,
+        max_value=3.0,
+        value=0.30,
+        step=0.05,
+        key="new_beta",
     )
 
 with col4:
@@ -148,14 +153,17 @@ if add_clicked:
     if new_source == new_target:
         st.error("Source and target cannot be the same.")
     else:
-        new_row = pd.DataFrame([{
-            "source": new_source,
-            "target": new_target,
-            "beta": float(new_beta)
-        }])
-        st.session_state["structural_paths_df"] = pd.concat(
-            [st.session_state["structural_paths_df"], new_row],
-            ignore_index=True,
+        new_row = pd.DataFrame(
+            [{"source": new_source, "target": new_target, "beta": float(new_beta)}]
+        )
+        # Append and drop duplicates to avoid identical duplicate paths
+        st.session_state["structural_paths_df"] = (
+            pd.concat(
+                [st.session_state["structural_paths_df"], new_row],
+                ignore_index=True,
+            )
+            .drop_duplicates(subset=["source", "target"], keep="last")
+            .reset_index(drop=True)
         )
         st.success(f"Added: {new_source} → {new_target} (β = {new_beta:.2f})")
 
@@ -165,14 +173,22 @@ if add_clicked:
 # ---------------------------------------------------------
 st.subheader("3. Optional R² Targets")
 
-endogenous = sorted(
-    set(st.session_state["structural_paths_df"]["target"].dropna().tolist())
-)
+# Endogenous constructs = all unique targets
+if "structural_paths_df" in st.session_state:
+    df_paths = st.session_state["structural_paths_df"]
+    if "target" in df_paths.columns:
+        endogenous = sorted(set(df_paths["target"].dropna().tolist()))
+    else:
+        endogenous = []
+else:
+    endogenous = []
 
 if endogenous:
+    # Initialize or update R² targets dict in session_state
     if "r2_targets" not in st.session_state:
         st.session_state["r2_targets"] = {e: None for e in endogenous}
     else:
+        # Keep existing values for previous constructs, add new ones if needed
         for e in endogenous:
             st.session_state["r2_targets"].setdefault(e, None)
 
@@ -183,20 +199,23 @@ if endogenous:
             current_val = st.session_state["r2_targets"].get(cons)
             new_val = st.number_input(
                 f"R² for {cons}",
-                min_value=0.0, max_value=0.95,
+                min_value=0.0,
+                max_value=0.95,
                 value=float(current_val) if current_val else 0.0,
-                step=0.01
+                step=0.01,
             )
             st.session_state["r2_targets"][cons] = new_val
-
 else:
-    st.info("No endogenous constructs detected yet (no targets). Add paths first.")
+    st.info(
+        "No endogenous constructs detected yet (no targets). "
+        "Add at least one structural path."
+    )
 
 
 # ---------------------------------------------------------
 # 4. SAVE STRUCTURAL MODEL
 # ---------------------------------------------------------
-st.subheader("4. Save structural configuration")
+st.subheader("4. Save Structural Configuration")
 
 if st.button("Save structural configuration", type="primary"):
 
@@ -205,22 +224,33 @@ if st.button("Save structural configuration", type="primary"):
     for _, row in st.session_state["structural_paths_df"].iterrows():
         if pd.isna(row["source"]) or pd.isna(row["target"]):
             continue
+
+        # Safe β: if NaN, default to 0.30
+        try:
+            beta_val = float(row["beta"])
+        except Exception:
+            beta_val = 0.30
+
         paths_cfg.append(
             PathConfig(
-                source=str(row["source"]),
-                target=str(row["target"]),
-                beta=float(row["beta"]),
+                source=str(row["source"]).strip(),
+                target=str(row["target"]).strip(),
+                beta=beta_val,
             )
         )
 
-    # Clean R² dictionary
-    r2_targets = {
-        k: float(v)
-        for k, v in st.session_state["r2_targets"].items()
-        if v is not None and v > 0
-    }
+    # Clean R² dictionary: keep only positive values
+    r2_targets = {}
+    if "r2_targets" in st.session_state:
+        for k, v in st.session_state["r2_targets"].items():
+            try:
+                v = float(v)
+                if v > 0:
+                    r2_targets[str(k)] = v
+            except Exception:
+                continue
 
-    # Store serializable version
+    # Store serializable version in session_state for Home page
     st.session_state["structural_config_raw"] = {
         "paths": [
             {"source": p.source, "target": p.target, "beta": p.beta}
@@ -229,12 +259,20 @@ if st.button("Save structural configuration", type="primary"):
         "r2_targets": r2_targets,
     }
 
+    # Also build a StructuralConfig object in case core modules want to use it directly
+    st.session_state["structural_config"] = StructuralConfig(
+        paths=paths_cfg,
+        r2_targets=r2_targets,
+    )
+
     st.success("Structural model saved. Home page will now use this configuration.")
     st.json(st.session_state["structural_config_raw"])
 
 else:
-    st.caption("Click **Save structural configuration** to activate this model for data generation.")
-
+    st.caption(
+        "After defining paths and (optionally) R² values, "
+        "click **Save structural configuration** to activate the model."
+    )
 
 # ---------------------------------------------------------
 # FOOTER

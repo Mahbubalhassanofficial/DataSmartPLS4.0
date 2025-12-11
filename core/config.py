@@ -86,7 +86,12 @@ class ModelConfig:
     demographics: DemographicConfig = field(default_factory=DemographicConfig)
     bias: BiasConfig = field(default_factory=BiasConfig)
 
+    # NEW: structural model configuration
+    structural: StructuralConfig = field(default_factory=StructuralConfig)
+
     metadata: Dict[str, str] = field(default_factory=dict)
+
+
 
 # ============================================================
 # STRUCTURAL MODEL CONFIGURATION

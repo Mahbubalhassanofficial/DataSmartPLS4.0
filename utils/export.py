@@ -1,32 +1,46 @@
 """
 utils/export.py
 ----------------
-Handles all exporting functions for DataSmartPLS4.0:
+Full export system for DataSmartPLS4.0 including:
 
-- CSV, Excel (full and SmartPLS-format)
+- CSV
+- Excel (full dataset)
+- Excel SmartPLS (items only)
 - SPSS (.sav)
 - Stata (.dta)
 - R (.rds)
 - JSON metadata
-- Codebook generation
+- Codebook CSV
+- Codebook PDF (journal-ready)
+- Codebook HTML
 
-This module enables complete academic-quality export functionality.
+This module is used by the Export Center.
 """
 
 import json
 import pandas as pd
 import numpy as np
 
-# Optional libraries
+# Optional libs for SPSS / STATA / R
 try:
-    import pyreadstat       # SPSS + Stata
+    import pyreadstat
 except ImportError:
     pyreadstat = None
 
 try:
-    import pyreadr          # R export
+    import pyreadr
 except ImportError:
     pyreadr = None
+
+# Optional lib for PDF generation
+try:
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.pagesizes import A4
+    pdf_available = True
+except ImportError:
+    pdf_available = False
 
 
 
@@ -35,24 +49,15 @@ except ImportError:
 # =====================================================================
 
 def generate_codebook(model_cfg, items_df, full_df):
-    """
-    Create a metadata table for constructs, items, demographics,
-    and structural paths.
-
-    Returned as a pandas DataFrame.
-    """
+    """Create metadata table for constructs, demographics, & structural paths."""
     rows = []
 
-    # Measurement constructs
+    # Measurement
     for cons in model_cfg.constructs:
         for i in range(1, cons.n_items + 1):
             col = f"{cons.name}_{i:02d}"
-
-            if col in full_df.columns:
-                col_min = full_df[col].min()
-                col_max = full_df[col].max()
-            else:
-                col_min, col_max = np.nan, np.nan
+            col_min = full_df[col].min() if col in full_df else None
+            col_max = full_df[col].max() if col in full_df else None
 
             rows.append(
                 {
@@ -90,7 +95,7 @@ def generate_codebook(model_cfg, items_df, full_df):
                     }
                 )
 
-    # Structural appendix
+    # Structural paths (appendix)
     if model_cfg.structural and model_cfg.structural.paths:
         for p in model_cfg.structural.paths:
             rows.append(
@@ -118,7 +123,6 @@ def generate_codebook(model_cfg, items_df, full_df):
 # =====================================================================
 
 def export_csv(full_df):
-    """Export full dataset as CSV."""
     return full_df.to_csv(index=False).encode("utf-8")
 
 
@@ -128,10 +132,6 @@ def export_csv(full_df):
 # =====================================================================
 
 def export_excel_full(full_df):
-    """
-    Export the *full* dataset as Excel:
-    demographic + items + additional variables.
-    """
     from io import BytesIO
     buf = BytesIO()
     full_df.to_excel(buf, index=False, engine="openpyxl")
@@ -139,12 +139,7 @@ def export_excel_full(full_df):
 
 
 def export_excel_smartpls(items_df):
-    """
-    Export ONLY item indicators as Excel.
-    This is the official SmartPLS-compatible format.
-    
-    No demographics, no strings — only pure numeric indicator columns.
-    """
+    """SmartPLS Excel (items only, pure numeric)"""
     from io import BytesIO
     buf = BytesIO()
     items_df.to_excel(buf, index=False, engine="openpyxl")
@@ -153,14 +148,12 @@ def export_excel_smartpls(items_df):
 
 
 # =====================================================================
-# SPSS + STATA EXPORTS
+# SPSS, STATA, R
 # =====================================================================
 
 def export_spss(full_df):
-    """Export full dataset to SPSS .sav."""
     if pyreadstat is None:
-        raise ImportError("pyreadstat is required for SPSS export.")
-
+        raise ImportError("pyreadstat not installed.")
     from io import BytesIO
     buf = BytesIO()
     pyreadstat.write_sav(full_df, buf)
@@ -168,26 +161,17 @@ def export_spss(full_df):
 
 
 def export_stata(full_df):
-    """Export full dataset to Stata .dta."""
     if pyreadstat is None:
-        raise ImportError("pyreadstat is required for Stata export.")
-
+        raise ImportError("pyreadstat not installed.")
     from io import BytesIO
     buf = BytesIO()
     pyreadstat.write_dta(full_df, buf)
     return buf.getvalue()
 
 
-
-# =====================================================================
-# R EXPORT (.rds)
-# =====================================================================
-
 def export_rds(full_df):
-    """Export full dataset as a .rds file for R."""
     if pyreadr is None:
-        raise ImportError("pyreadr is required for R export.")
-
+        raise ImportError("pyreadr not installed.")
     from io import BytesIO
     buf = BytesIO()
     pyreadr.write_rds(buf, full_df)
@@ -196,18 +180,10 @@ def export_rds(full_df):
 
 
 # =====================================================================
-# METADATA JSON EXPORT
+# JSON METADATA EXPORT
 # =====================================================================
 
 def export_metadata_json(model_cfg, codebook_df):
-    """
-    Create a complete JSON metadata file containing:
-    - project info
-    - construct definitions
-    - structural paths
-    - R² targets
-    - codebook
-    """
     meta = {
         "project": model_cfg.project_name,
         "researcher": model_cfg.researcher_name,
@@ -230,11 +206,61 @@ def export_metadata_json(model_cfg, codebook_df):
             {"source": p.source, "target": p.target, "beta": p.beta}
             for p in (model_cfg.structural.paths if model_cfg.structural else [])
         ],
-        "r2_targets": (
-            model_cfg.structural.r2_targets
-            if model_cfg.structural else {}
-        ),
+        "r2_targets": model_cfg.structural.r2_targets if model_cfg.structural else {},
         "codebook": codebook_df.to_dict(orient="records"),
     }
-
     return json.dumps(meta, indent=4).encode("utf-8")
+
+
+
+# =====================================================================
+# CODEBOOK PDF EXPORT
+# =====================================================================
+
+def export_codebook_pdf(codebook_df, title="DataSmartPLS4.0 Codebook"):
+    """
+    Create a PDF codebook (if reportlab is available).
+    """
+    if not pdf_available:
+        raise ImportError("reportlab is not installed, cannot generate PDF.")
+
+    from io import BytesIO
+    buf = BytesIO()
+
+    doc = SimpleDocTemplate(buf, pagesize=A4)
+    styles = getSampleStyleSheet()
+    story = []
+
+    story.append(Paragraph(title, styles["Title"]))
+    story.append(Paragraph("Generated using DataSmartPLS4.0", styles["Normal"]))
+
+    data = [list(codebook_df.columns)] + codebook_df.values.tolist()
+
+    table = Table(data, repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+            ]
+        )
+    )
+    story.append(table)
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+
+# =====================================================================
+# HTML CODEBOOK EXPORT
+# =====================================================================
+
+def export_codebook_html(codebook_df):
+    """
+    Export codebook as a clean HTML table.
+    """
+    html = codebook_df.to_html(index=False, border=1)
+    return html.encode("utf-8")

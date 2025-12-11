@@ -87,3 +87,38 @@ class ModelConfig:
     bias: BiasConfig = field(default_factory=BiasConfig)
 
     metadata: Dict[str, str] = field(default_factory=dict)
+
+# ============================================================
+# STRUCTURAL MODEL CONFIGURATION
+# ============================================================
+
+@dataclass
+class PathConfig:
+    """
+    Defines a single structural path between constructs.
+
+    Example:
+        PathConfig(source="PE", target="BI", beta=0.35)
+
+    Meaning:
+        BI = 0.35 * PE + error
+    """
+    source: str   # predictor construct name
+    target: str   # outcome construct name
+    beta: float   # path coefficient
+
+
+@dataclass
+class StructuralConfig:
+    """
+    Holds all structural paths and (optionally) R² targets.
+
+    - paths: list of PathConfig objects
+    - r2_targets: optional mapping from construct → desired R²
+
+    R² matching will be implemented in a later structural step.
+    For now, paths control how latent variables influence each other.
+    """
+    paths: List[PathConfig] = field(default_factory=list)
+    r2_targets: Dict[str, float] = field(default_factory=dict)
+

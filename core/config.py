@@ -2,25 +2,44 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Literal, Dict
 
 
-# Distribution types for latent variables
-DistributionType = Literal[
-    "normal",
-    "skewed",
-    "uniform",
-    "lognormal",
-    "beta"
-]
+# ============================================================
+# BASIC TYPES
+# ============================================================
 
-# Scale type (later: binary, VAS, etc.)
+DistributionType = Literal["normal", "skewed", "uniform", "lognormal", "beta"]
 LikertScaleType = Literal["discrete_likert"]
 
 
+# ============================================================
+# STRUCTURAL MODEL CONFIGURATION  (MOVED TO TOP)
+# ============================================================
+
+@dataclass
+class PathConfig:
+    """
+    Defines a single structural path:
+        BI = beta * PE + error
+    """
+    source: str
+    target: str
+    beta: float
+
+
+@dataclass
+class StructuralConfig:
+    """
+    Holds structural paths and optional R² targets.
+    """
+    paths: List[PathConfig] = field(default_factory=list)
+    r2_targets: Dict[str, float] = field(default_factory=dict)
+
+
+# ============================================================
+# MEASUREMENT MODEL CONFIGURATION
+# ============================================================
+
 @dataclass
 class ConstructConfig:
-    """
-    Configuration for one reflective latent construct.
-    Future versions will expand to formative, higher-order, and structural relations.
-    """
     name: str
     n_items: int
 
@@ -41,9 +60,6 @@ class ConstructConfig:
 
 @dataclass
 class SampleConfig:
-    """
-    Sample-level configuration settings.
-    """
     n_respondents: int = 500
     likert_min: int = 1
     likert_max: int = 5
@@ -53,17 +69,11 @@ class SampleConfig:
 
 @dataclass
 class DemographicConfig:
-    """
-    Demographic simulation settings.
-    """
     add_demographics: bool = True
 
 
 @dataclass
 class BiasConfig:
-    """
-    Response style behaviours — to be applied in later steps.
-    """
     careless_rate: float = 0.0
     straightlining_rate: float = 0.0
     random_response_rate: float = 0.0
@@ -72,58 +82,27 @@ class BiasConfig:
     extreme_bias_level: float = 0.0
 
 
+# ============================================================
+# MODEL CONFIG  (NOW StructuralConfig is defined above)
+# ============================================================
+
 @dataclass
 class ModelConfig:
     """
-    High-level configuration object that holds everything needed
-    to generate one synthetic dataset.
+    High-level configuration object that controls dataset generation.
     """
     project_name: str
     researcher_name: str
 
     constructs: List[ConstructConfig]
+
     sample: SampleConfig = field(default_factory=SampleConfig)
     demographics: DemographicConfig = field(default_factory=DemographicConfig)
     bias: BiasConfig = field(default_factory=BiasConfig)
 
-    # NEW: structural model configuration
-    structural: StructuralConfig = field(default_factory=StructuralConfig)
+    # FIX: use lambda to avoid class-order issues
+    structural: StructuralConfig = field(
+        default_factory=lambda: StructuralConfig(paths=[], r2_targets={})
+    )
 
     metadata: Dict[str, str] = field(default_factory=dict)
-
-
-
-# ============================================================
-# STRUCTURAL MODEL CONFIGURATION
-# ============================================================
-
-@dataclass
-class PathConfig:
-    """
-    Defines a single structural path between constructs.
-
-    Example:
-        PathConfig(source="PE", target="BI", beta=0.35)
-
-    Meaning:
-        BI = 0.35 * PE + error
-    """
-    source: str   # predictor construct name
-    target: str   # outcome construct name
-    beta: float   # path coefficient
-
-
-@dataclass
-class StructuralConfig:
-    """
-    Holds all structural paths and (optionally) R² targets.
-
-    - paths: list of PathConfig objects
-    - r2_targets: optional mapping from construct → desired R²
-
-    R² matching will be implemented in a later structural step.
-    For now, paths control how latent variables influence each other.
-    """
-    paths: List[PathConfig] = field(default_factory=list)
-    r2_targets: Dict[str, float] = field(default_factory=dict)
-
